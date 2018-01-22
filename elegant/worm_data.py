@@ -56,7 +56,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
     """
     worms = Worms()
     for path_glob in path_globs:
-        for path in map(pathlib.Path, glob.iglob(path_glob, recursive=True)):
+        for path in map(pathlib.Path, glob.iglob(str(path_glob), recursive=True)):
             if callable(name_prefix):
                 prefix = name_prefix(path)
             else:
@@ -90,7 +90,7 @@ def _read_datafile(path, prefix, delimiter):
             worm_rows.append(row)
         yield prefix + current_name, header[1:], worm_rows
 
-def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_features=('lifespan',), smooth=0.4):
+def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_features=('lifespan',), min_age=-numpy.inf, max_age=numpy.inf, smooth=0.4):
     """Calculate average trends across groups of worms, returning a new Worms object.
 
     Given a set of timecourse features and a set of worms grouped by some criterion,
@@ -106,7 +106,7 @@ def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_f
         grouped_worms: dictionary mapping from group names to Worms objects of
             the worms in each group. The group name will be the "name" attribute
             of each "meta worm" produced. Such a grouped_worms dict can be
-            produced from the Worms.bin or Worms.group_by_value functions.
+            produced from the Worms.bin or Worms.group_by functions.
         *timecourse_features: one or more feature names, listing the features
             for which time averages should be calculated.
         age_feature: feature to use for the "age" axis of the average trajectories.
@@ -119,6 +119,9 @@ def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_f
         smooth: smoothing parameter passed to LOWESS moving_mean function.
             Represents the fraction of input data points that will be smoothed
             across at each output data point.
+        min_age, max_age: the beginning and end of the window to analyze.
+            If not specified, features from the very beginning and/or to the
+            very end of the timecourse will be retrieved.
 
     Returns:
         Worms object, sorted by group name.
@@ -135,13 +138,19 @@ def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_f
         meta_worm.n = len(worms)
         meta_worm.worms = worms
         ages = numpy.concatenate([age_feature(worm) if callable(age_feature) else getattr(worm.td, age_feature) for worm in worms])
+        age_mask = (ages >= min_age) & (ages <= max_age)
+        masked_ages = ages[age_mask]
+        ages_out = numpy.linspace(masked_ages.min(), masked_ages.max(), 100)
         for feature in timecourse_features:
             vals = numpy.concatenate([getattr(worm.td, feature) for worm in worms])
-            ages_out, trend = moving_mean_std.moving_mean(ages, vals, points_out=50, smooth=smooth, iters=1)
+            mask = numpy.isfinite(vals) & age_mask
+            val_ages = ages[mask]
+            vals = vals[mask]
+            trend = moving_mean_std.moving_mean(val_ages, vals, points_out=ages_out, smooth=smooth, iters=1)[1]
             setattr(meta_worm.td, feature, trend)
         for feature in summary_features:
             setattr(meta_worm, feature, worms.get_feature(feature).mean())
-        meta_worm.td.age = ages_out # the same for all loops; just set once
+        setattr(meta_worm.td, age_feature, ages_out) # the same for all loops; just set once
         meta_worms.append(meta_worm)
     return meta_worms
 
@@ -185,9 +194,9 @@ class Worm(object):
                 feature_vals.append(item)
         for feature_name, feature_vals in zip(feature_names, vals_for_features):
             arr = numpy.array(feature_vals)
-            if feature == 'age' or feature.endswith('_age'):
+            if feature_name == 'age' or feature_name.endswith('_age'):
                 arr *= age_scale
-            setattr(self.td, feature, arr)
+            setattr(self.td, feature_name, arr)
         if hasattr(self.td, 'age'):
             if last_timepoint_is_first_dead:
                 self.lifespan = self.td.age[-2:].mean() # midpoint between last-alive and first-dead
@@ -195,9 +204,9 @@ class Worm(object):
                 self.lifespan = self.td.age[-1] + (self.td.age[-1] - self.td.age[-2])/2 # halfway through the next interval, assumes equal intervals
 
     def __repr__(self):
-        return 'Worm("{}")'.format(self.name)
+        return f'Worm("{self.name}")'
 
-    def get_time_range(self, feature, age_min=-numpy.inf, age_max=numpy.inf, age_feature='age', match_closest=False):
+    def get_time_range(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', match_closest=False, filter_valid=True):
         """Get data from a timecourse feature in a specific time window.
 
         Parameters:
@@ -205,7 +214,7 @@ class Worm(object):
                 retrieve (such as "gfp_95th", say), or a function that will be
                 called as feature(worm) that will calculate a timecourse feature
                 (see examples).
-            age_min, age_max: the beginning and end of the window in which to
+            min_age, max_age: the beginning and end of the window in which to
                 retrieve features. If not specified, features from the very
                 beginning and/or to the very end of the timecourse will be
                 retrieved.
@@ -215,9 +224,11 @@ class Worm(object):
                 function, it will be called as age_feature(worm) to generate
                 the ages to examine (see examples).
             match_closest: If False (default), the age window is strictly
-                defined as age <= age_max and >= age_min. However, if
+                defined as age <= max_age and >= min_age. However, if
                 match_closest is True, the window will begin at the nearest age
-                to age_min, and end at the nearest age to age_max.
+                to min_age, and end at the nearest age to max_age.
+            filter_valid: If True (default), data with value nan, even in the age
+                range requested, will not be returned.
 
         Returns:
             ages: the ages within the window
@@ -228,7 +239,7 @@ class Worm(object):
 
             #Basic usage:
             midlife_ages, midlife_gfp = worm.get_time_range('gfp_95th', 3, 7)
-            old_ages, old_gfp = worm.get_time_range('gfp_95th', age_min=7)
+            old_ages, old_gfp = worm.get_time_range('gfp_95th', min_age=7)
 
             # Using a function as a feature:
             def bg_subtracted_gfp(worm):
@@ -243,22 +254,22 @@ class Worm(object):
             def ghost_age(worm):
                 # zero means dead, more negative means longer to live
                 return worm.td.age - worm.lifespan
-            ghost_ages, near_death_gfp = worm.get_time_range('gfp_95th', age_min=-1, age_feature=ghost_age)
+            ghost_ages, near_death_gfp = worm.get_time_range('gfp_95th', min_age=-1, age_feature=ghost_age)
         """
         ages = age_feature(self) if callable(age_feature) else getattr(self.td, age_feature)
         data = feature(self) if callable(feature) else getattr(self.td, feature)
         if match_closest:
-            mask = self._get_closest_times_mask(ages, age_min, age_max)
+            mask = self._get_closest_times_mask(ages, min_age, max_age)
         else:
-            mask = (ages >= age_min) & (ages <= age_max)
-        if numpy.issubdtype(data.dtype, float):
+            mask = (ages >= min_age) & (ages <= max_age)
+        if filter_valid and numpy.issubdtype(data.dtype, float):
             mask &= ~numpy.isnan(data)
         return ages[mask], data[mask]
 
     @staticmethod
-    def _get_closest_times_mask(ages, age_min, age_max):
-        li = numpy.argmin(numpy.absolute(ages - age_min))
-        ui = numpy.argmin(numpy.absolute(ages - age_max))
+    def _get_closest_times_mask(ages, min_age, max_age):
+        li = numpy.argmin(numpy.absolute(ages - min_age))
+        ui = numpy.argmin(numpy.absolute(ages - max_age))
         r = numpy.arange(len(ages))
         return (r >= li) & (r <= ui)
 
@@ -310,6 +321,15 @@ class Worms(collections.UserList):
     See the documentation for worms-specific methods to read and write data
     files, and to gather and analyze data pertaining to groups of worms.
     """
+
+    def __getitem__(self, i):
+        # work around a bug in python 3.6 where UserList doesn't return the right type
+        # for slices. TODO: Check later if this is fixed and can remove workaround
+        if isinstance(i, slice):
+            return self.__class__(self.data[i])
+        else:
+            return self.data[i]
+
     def read_summary_data(self, path, add_new=False, delimiter='\t'):
         """Read in summary data (not timecourse data) for each worm.
 
@@ -440,8 +460,8 @@ class Worms(collections.UserList):
             missing = [''] * n
             cols = []
             for feature in features:
-                if feature not in worm.__dict__ and error_on_missing:
-                    raise ValueError('Worm "{worm.name}" has no "{feature}" feature.')
+                if feature not in worm.td.__dict__ and error_on_missing:
+                    raise ValueError(f'Worm "{worm.name}" has no "{feature}" feature.')
                 else:
                     cols.append(getattr(worm.td, feature, missing))
             assert all(len(c) == n for c in cols)
@@ -451,7 +471,7 @@ class Worms(collections.UserList):
                     row.append(colval)
             if multi_worm_file:
                 for row in rows:
-                    row.insert(worm.name, 0)
+                    row.insert(0, worm.name)
                 data.extend(rows)
             else:
                 worm_path = (path / worm.name).with_suffix(suffix)
@@ -535,7 +555,7 @@ class Worms(collections.UserList):
             key = feature
         else:
             def key(worm):
-                getattr(worm, feature)
+                return getattr(worm, feature)
         super().sort(key=key, reverse=reverse)
 
     def filter(self, criterion):
@@ -556,34 +576,173 @@ class Worms(collections.UserList):
         mask = self.get_feature(criterion).astype(bool)
         return self.__class__([worm for worm, keep in zip(self, mask) if keep])
 
-    def get_time_range(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+    def get_time_range(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', match_closest=False, filter_valid=True):
+        """Get data within a given age range for each worm.
+
+        Calls get_time_range(...) on each worm in the list and return the results.
+
+        Parameters:
+            feature: the name of a timecourse feature available in worm.td to
+                retrieve (such as "gfp_95th", say), or a function that will be
+                called as feature(worm) that will calculate a timecourse feature
+                (see examples in Worm.get_time_range).
+            min_age, max_age: the beginning and end of the window in which to
+                retrieve features. If not specified, features from the very
+                beginning and/or to the very end of the timecourse will be
+                retrieved.
+            age_feature: the name of the feature to use to determine the age
+                window. Defaults to 'age', but other monotonic features, such as
+                a time-left-alive 'ghost_age' could also be used. If this is a
+                function, it will be called as age_feature(worm) to generate
+                the ages to examine (see examples).
+            match_closest: If False (default), the age window is strictly
+                defined as age <= max_age and >= min_age. However, if
+                match_closest is True, the window will begin at the nearest age
+                to min_age, and end at the nearest age to max_age.
+            filter_valid: If True (default), data with value nan, even in the age
+                range requested, will not be returned.
+
+        Returns: list of numpy arrays, one array per worm. Each array has shape
+            (n, 2), where n is the number of timepoints in the specified age range.
+            array[:,0] is the ages at each timepoint, and array[:,1] is the feature
+            values for each timepoint.
+
+        Example:
+            # assuming each worm has a 'integrated_gfp' entry in worm.td,
+            # the below will retrieve all the values between days 5 and 7
+            # (assuming that the times are in days...).
+            data = worms.get_time_range('integrated_gfp', min_age=5, max_age=7)
+            # calculate the average relationship between age and GFP level:
+            all_data = numpy.concatenate(data)
+            all_ages = all_data[:,0]
+            all_gfp = all_data[:, 1]
+            fit = scipy.stats.linregress(all_ages, all_gfp)
+            print(fit.slope, fit.intercept)
+        """
         out = []
         for worm in self:
-            ages, value = worm.get_time_range(feature, min_age, max_age, age_feature)
-            out.append(numpy.transpose([ages, value]))
+            ages, values = worm.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid)
+            out.append(numpy.transpose([ages, values]))
         return out
 
     def get_feature(self, feature):
+        """Get the specified feature for each worm in the list.
+
+        Parameters:
+            feature: the name of an attribute of each worm object to retrieve
+                (such as "lifespan", say), or a function that will be called as
+                feature(worm) that will calculate such a feature (see examples).
+
+        Returns: list of feature values, one for each worm.
+
+        Example:
+            lifespans = worms.get_feature('lifespan')
+
+            # find the age at which the timecourse feature 'gfp' peaks
+            def peak_gfp_age(worm):
+                peak_gfp_i = worm.td.gfp.argmax()
+                return worm.td.age[peak_gfp_i]
+            peak_gfp_ages = worms.get_feature(peak_gfp_age)
+        """
         return numpy.array([feature(worm) if callable(feature) else getattr(worm, feature) for worm in self])
 
     def get_features(self, *features):
-        vals = list(map(self.get_feature, features))
-        if len(features) > 1:
-            vals = numpy.concatenate(vals, axis=1)
-        else:
-            vals = vals[0]
-        if vals.ndim == 1:
-            vals = vals[:, numpy.newaxis]
-        return vals
+        """Get one or more specified features from each worm in the list.
 
-    def group_by_value(self, values):
-        assert len(values) == len(self)
+        Parameter list: the names of attributes of each worm object to retrieve
+                (such as "lifespan", say), or functions that will be called as
+                feature(worm) that will calculate such a feature.
+
+        Returns: numpy.array of shape (n_worms, n_features)
+        """
+        if len(features) == 1:
+            return self.get_feature(features[0])[:, numpy.newaxis]
+        else:
+            return numpy.transpose([self.get_feature(feature) for feature in features])
+
+    def get_timecourse_features(self, *features, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', match_closest=False, filter_valid=True):
+        """Get multiple timecourse features within a given age range for each worm.
+
+        Parameters:
+            features: names of timecourse features available in worm.td to
+                retrieve (such as "gfp_95th", say), or functions that will be
+                called as feature(worm) that will calculate a timecourse feature
+                (see examples in Worm.get_time_range).
+            min_age, max_age: the beginning and end of the window in which to
+                retrieve features. If not specified, features from the very
+                beginning and/or to the very end of the timecourse will be
+                retrieved.
+            age_feature: the name of the feature to use to determine the age
+                window. Defaults to 'age', but other monotonic features, such as
+                a time-left-alive 'ghost_age' could also be used. If this is a
+                function, it will be called as age_feature(worm) to generate
+                the ages to examine (see examples).
+            match_closest: If False (default), the age window is strictly
+                defined as age <= max_age and >= min_age. However, if
+                match_closest is True, the window will begin at the nearest age
+                to min_age, and end at the nearest age to max_age.
+            filter_valid: If True (default), data with value nan, even in the age
+                range requested, will not be returned.
+
+        Returns: numpy.array of shape (total_timepoints, n_features), where
+            total_timepoints is the total number of timepoints (across all the
+            worms) within the age range, and n_features is the number of
+            specified timepoint features.
+
+        If there are 100 worms, each with 12 timepoints, then
+        get_timecourse_features('gfp', 'texture') will return an array of shape
+        (1200, 2).
+        """
+        data = []
+        for feature in features:
+            data.append(numpy.concatenate(self.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid=False))[:,1])
+        data = numpy.transpose(data) # shape (n_timepoints, n_features)
+        if filter_valid:
+            data = data[numpy.all(~numpy.isnan(data), axis=1)]
+        return data
+
+    def group_by(self, keys):
+        """Given a list of keys (one for each worm), return a dictionary mapping
+        each key to all the worms that have the same key.
+
+        Example, assuming four worms:
+        keys = ['good', 'bad', 'good', 'good']
+        groups = worms.group_by(keys)
+        groups['good'] # list containing worms 0, 2, and 3
+        """
+        assert len(keys) == len(self)
         worms = collections.defaultdict(self.__class__)
-        for worm, value in zip(self, values):
-            worms[value].append(worm)
+        for worm, key in zip(self, keys):
+            worms[key].append(worm)
         return dict(worms)
 
     def bin(self, feature, nbins, equal_count=False):
+        """Group worms into bins based on a feature value.
+
+        Most useful for passing to the meta_worms factory function, to calculate
+        average time trends for grouped worms.
+
+        Parameters:
+            feature: the name of an attribute of each worm object to retrieve
+                (such as "lifespan", say), or a function that will be called as
+                feature(worm) that will calculate such a feature.
+            nbins: number of groups to bin worms into
+            equal_count: if False (default), worms will be binned based on a
+                splitting the total feature range into equal width bins. If True,
+                worms will be grouped into bins with equal numbers of worms.
+
+        Returns: dict mapping bin names (strings with either the bin number,
+            if equal_count is True, or a description of the feature range for
+            the bin) to worms in that bin.
+
+        Example:
+            lifespan_terciles = worms.bin('lifespan', nbins=3, equal_count=True)
+            shortest_tercile = lifespan_terciles['0']
+
+            age_at_death_cohorts = worms.bin('lifespan', nbins=7)
+            for range, binned_worms in sorted(age_at_death_cohorts.items()):
+                print(range, len(binned_worms))
+        """
         data = self.get_feature(feature)
         if equal_count:
             ranks = data.argsort().argsort()
@@ -591,12 +750,12 @@ class Worms(collections.UserList):
         else:
             bin_edges = numpy.linspace(data.min(), data.max(), nbins+1)
             bin_numbers = numpy.digitize(data, bin_edges[1:-1])
-            bin_names = ['[{:.1f}-{:.1f})'.format(bin_edges[i], bin_edges[i+1]) for i in range(len(bin_edges)-2)]
-            bin_names.append('[{:.1f}-{:.1f}]'.format(bin_edges[-2], bin_edges[-1]))
+            bin_names = [f'[{bin_edges[i]:.1f}-{bin_edges[i]+1:.1f})' for i in range(len(bin_edges)-2)]
+            bin_names.append(f'[{bin_edges[-2]:.1f}-{bin_edges[-1]:.1f}]')
             bins = [bin_names[n] for n in bin_numbers]
-        return self.group_by_value(bins)
+        return self.group_by(bins)
 
-    def regress(self, *features, target='lifespan', control_features=None, regressor=None, filter_valid=True):
+    def get_regression_data(self, *features, target='lifespan', control_features=None, filter_valid=True):
         y = self.get_feature(target)
         X = self.get_features(*features)
         C = None if control_features is None else self.get_features(*control_features)
@@ -606,15 +765,20 @@ class Worms(collections.UserList):
             y = y[valid_mask]
             if C is not None:
                 C = C[valid_mask]
+        return y, X, C
+
+    def regress(self, *features, target='lifespan', control_features=None, regressor=None):
+        y, X, C = self.get_regression_data(*features, target=target, control_features=control_features)
         return regress.regress(X, y, C, regressor)
 
+    def get_regression_time_data(self, *features, target='age', min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+        X = self.get_timecourse_features(*features, min_age=min_age, max_age=max_age, age_feature=age_feature)
+        y = self.get_timecourse_features(target, min_age=min_age, max_age=max_age, age_feature=age_feature).squeeze()
+        return y, X
+
     def regress_time_data(self, *features, target='age', min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', regressor=None):
-        X = []
-        for feature in features:
-            X.append(numpy.concatenate(self.get_time_range(feature, min_age, max_age, age_feature), axis=1)[:,1])
-        X = numpy.transpose(X)
-        y = numpy.concatenate(self.get_time_range(target, min_age, max_age, age_feature), axis=1)[:,1]
-        return _regress(X, y, regressor)
+        y, X = self.get_regression_time_data(*features, target=target, min_age=min_age, max_age=max_age, age_feature=age_feature)
+        return regress.regress(X, y, regressor)
 
     def _timecourse_plot_data(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', color_by='lifespan'):
         time_ranges = self.get_time_range(feature, min_age, max_age, age_feature)
