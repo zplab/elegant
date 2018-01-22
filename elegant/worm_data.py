@@ -756,29 +756,89 @@ class Worms(collections.UserList):
         return self.group_by(bins)
 
     def get_regression_data(self, *features, target='lifespan', control_features=None, filter_valid=True):
-        y = self.get_feature(target)
+        """Get data matrices useful for predicting a target feature based on one or more other features,
+        optionally controlling for a set of features.
+
+        Parameters:
+            features: one or more features to retrieve to serve as indepdendent
+                variable(s). Passed to get_features()
+            target: feature to serve as dependent variable. Passed to get_feature()
+            control_features: if not None, a list of features to pass to
+                get_features() to serve as variables to control for.
+            filter_valid: if True, filter out entries of X, y, and C where any
+                entries are nan.
+
+        Returns: X, y, C
+            X: array of shape (n_worms, n_features)
+            y: array of shape (n_worms)
+            C: array of shape (n_worms, n_control_features)
+        """
         X = self.get_features(*features)
+        y = self.get_feature(target)
         C = None if control_features is None else self.get_features(*control_features)
         if filter_valid:
-            valid_mask = numpy.isfinite(X).all(axis=1)
+            valid_mask = numpy.isfinite(X).all(axis=1) & numpy.isfinite(y)
+            if C is not None:
+                valid_mask &= numpy.isfinite(C).all(axis=1)
             X = X[valid_mask]
             y = y[valid_mask]
             if C is not None:
                 C = C[valid_mask]
-        return y, X, C
+        return X, y, C
 
     def regress(self, *features, target='lifespan', control_features=None, regressor=None):
-        y, X, C = self.get_regression_data(*features, target=target, control_features=control_features)
+        """Use zplib.scalar_stats.regress to determine relationship between features.
+
+        See zplib.scalar_stats.regress for more information.
+
+        Parameters:
+            features: one or more features to retrieve to serve as indepdendent
+                variable(s). Passed to get_features()
+            target: feature to serve as dependent variable. Passed to get_feature()
+            control_features: if not None, a list of features to pass to
+                get_features() to serve as variables to control for.
+            regressor: if not None, a sklearn-style regressor to use. Othwerwise
+                zplib.scalar_stats.regress will use linear regression.
+
+        Returns: zplib.scalar_stats.RegressionResult, which is a named tuple
+            with fields: 'y_est', 'resid', 'R2', 'regressor', and 'X':
+                y_est: estimated target feature based on input features
+                resid: residuals (y - y_est, where y is the target feature)
+                R2: R-squared value.
+                regressor: the regressor fit to the data.
+                X: the input data matrix, possibly transformed by controlling
+                    for the input parameters.
+
+        Example:
+            # determine relationship between peak GFP value and lifespan,
+            # controlling for length at the time of that GFP peak.
+            for worm in worms:
+                peak_gfp_i = worm.td.gfp.argmax()
+                worm.peak_gfp = worm.td.gfp[peak_gfp_i]
+                worm.td.length_at_gfp_peak = worm.td.length[peak_gfp_i]
+
+            result = worms.regress('peak_gfp', control_features=['length_at_gfp_peak'])
+            print(result.R2)
+        """
+        X, y, C = self.get_regression_data(*features, target=target, control_features=control_features)
         return regress.regress(X, y, C, regressor)
 
     def get_regression_time_data(self, *features, target='age', min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+        """Get timecourse data in a format suitable for predicting age
+        (or some other age-varying target) from one or more timecourse features.
+
+        Parameters:
+            features: one or more features to serve as independent variables.
+            min_age, max_age, age_feature: see get_timecourse_features()
+            target: feature to serve as dependent variable.
+
+        Returns: X, y
+            X: array of shape (n_timepoints, n_features)
+            y: array of shape (n_timepoints)
+        """
         X = self.get_timecourse_features(*features, min_age=min_age, max_age=max_age, age_feature=age_feature)
         y = self.get_timecourse_features(target, min_age=min_age, max_age=max_age, age_feature=age_feature).squeeze()
-        return y, X
-
-    def regress_time_data(self, *features, target='age', min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', regressor=None):
-        y, X = self.get_regression_time_data(*features, target=target, min_age=min_age, max_age=max_age, age_feature=age_feature)
-        return regress.regress(X, y, regressor)
+        return X, y
 
     def _timecourse_plot_data(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', color_by='lifespan'):
         time_ranges = self.get_time_range(feature, min_age, max_age, age_feature)
@@ -791,6 +851,24 @@ class Worms(collections.UserList):
         return out
 
     def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+        """Plot values of a given feature for each worm, colored by lifespan.
+
+        Parameters:
+            feature: the name of a timecourse feature available in worm.td to
+                retrieve (such as "gfp_95th", say), or a function that will be
+                called as feature(worm) that will calculate a timecourse feature
+                (see examples in Worm.get_time_range).
+            min_age, max_age: the beginning and end of the window in which to
+                retrieve features. If not specified, features from the very
+                beginning and/or to the very end of the timecourse will be
+                retrieved.
+            age_feature: the name of the feature to use to determine the age
+                window and the plot axes. Defaults to 'age', but other
+                monotonic features, such as a time-left-alive 'ghost_age' could
+                also be used. If this is a function, it will be called as
+                age_feature(worm) to generate the ages to examine (see
+                examples in Worm.get_time_range).
+        """
         import matplotlib.pyplot as plt
         plt.clf()
         for x, y, c in self._timecourse_plot_data(feature, min_age, max_age, age_feature):
