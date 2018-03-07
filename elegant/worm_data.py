@@ -24,8 +24,11 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
     The prefix is useful to distinguish animals from different experimental runs
     or genotypes, &c.
 
-    Each data file must have at a minimum a "timepoint" column (assumed to be
-    the first column) and an "age" column.
+    Each data file must have at a minimum a "timepoint" column and an "age" column.
+    For single-worm files, the "timepoint" column need not be labeled in the
+    header, as it is assumed to be the first column. Multi-worm files must have
+    the first column labeled "name" or "worm", and a labeled "timepoint" column
+    elsewhere.
 
     Parameters:
         *path_globs: all non-keyword arguments are treated as paths to worm data
@@ -62,7 +65,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
             else:
                 prefix = name_prefix
             for name, header, data in _read_datafile(path, prefix, delimiter):
-                worms.append(Worm(name, header, data, last_timepoint_is_first_dead, age_scale))
+                worms.append(Worm(name, header, data, last_timepoint_is_first_dead, age_scale, file_path=path))
     worms.sort('lifespan')
     return worms
 
@@ -90,7 +93,7 @@ def _read_datafile(path, prefix, delimiter):
             worm_rows.append(row)
         yield prefix + current_name, header[1:], worm_rows
 
-def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_features=('lifespan',), min_age=-numpy.inf, max_age=numpy.inf, smooth=0.4):
+def meta_worms(grouped_worms, *features, age_feature='age', summary_features=('lifespan',), min_age=-numpy.inf, max_age=numpy.inf, smooth=0.4):
     """Calculate average trends across groups of worms, returning a new Worms object.
 
     Given a set of timecourse features and a set of worms grouped by some criterion,
@@ -107,8 +110,8 @@ def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_f
             the worms in each group. The group name will be the "name" attribute
             of each "meta worm" produced. Such a grouped_worms dict can be
             produced from the Worms.bin or Worms.group_by functions.
-        *timecourse_features: one or more feature names, listing the features
-            for which time averages should be calculated.
+        *features: one or more feature names or callable functions which provide
+            features for which time averages should be calculated.
         age_feature: feature to use for the "age" axis of the average trajectories.
             Generally "age" is right, but trajectories could be centered on
             time of death using a "ghost_age" feature that counts down to zero
@@ -137,16 +140,13 @@ def meta_worms(grouped_worms, *timecourse_features, age_feature='age', summary_f
         meta_worm = Worm(group_name)
         meta_worm.n = len(worms)
         meta_worm.worms = worms
-        ages = numpy.concatenate([age_feature(worm) if callable(age_feature) else getattr(worm.td, age_feature) for worm in worms])
-        age_mask = (ages >= min_age) & (ages <= max_age)
-        masked_ages = ages[age_mask]
-        ages_out = numpy.linspace(masked_ages.min(), masked_ages.max(), 100)
-        for feature in timecourse_features:
-            vals = numpy.concatenate([getattr(worm.td, feature) for worm in worms])
-            mask = numpy.isfinite(vals) & age_mask
-            val_ages = ages[mask]
-            vals = vals[mask]
-            trend = moving_mean_std.moving_mean(val_ages, vals, points_out=ages_out, smooth=smooth, iters=1)[1]
+        ages, data = worms.get_timecourse_features(*features, min_age=min_age, max_age=max_age, filter_valid=False)
+        ages_out = numpy.linspace(ages.min(), ages.max(), 100)
+        for feature_data in data.T:
+            mask = numpy.isfinite(feature_data)
+            feature_ages = ages[mask]
+            feature_data = feature_data[mask]
+            trend = moving_mean_std.moving_mean(feature_ages, feature_data, points_out=ages_out, smooth=smooth, iters=1)[1]
             setattr(meta_worm.td, feature, trend)
         for feature in summary_features:
             setattr(meta_worm, feature, worms.get_feature(feature).mean())
@@ -167,7 +167,7 @@ class Worm(object):
     Convenience accessor functions for getting a range of timecourse measurements
     are provided.
     """
-    def __init__(self, name, feature_names=[], timepoint_data=[], last_timepoint_is_first_dead=True, age_scale=1):
+    def __init__(self, name, feature_names=[], timepoint_data=[], last_timepoint_is_first_dead=True, age_scale=1, file_path=None):
         """It is generally preferable to construct worms from a factory function
         such as read_worms or meta_worms, rather than using the constructor.
 
@@ -183,10 +183,14 @@ class Worm(object):
             age_scale: scale-factor for the ages read in. The values in the
                 "age" column and any column ending in '_age' will be multiplied
                 by this scalar. (Useful e.g. for converting hours to days.)
+            file_path: if not None, used for error reporting if the worm data
+                is invalid.
         """
         self.name = name
         self.td = _TimecourseData()
         vals_for_features = [[] for _ in feature_names]
+        if 'age' not in feature_names or 'timepoint' not in feature_names:
+            raise ValueError(f'')
         for timepoint in timepoint_data:
             # add each entry in the timepoint data to the corresponding list in
             # vals_for_features
@@ -262,7 +266,7 @@ class Worm(object):
             mask = self._get_closest_times_mask(ages, min_age, max_age)
         else:
             mask = (ages >= min_age) & (ages <= max_age)
-        if filter_valid and numpy.issubdtype(data.dtype, float):
+        if filter_valid and numpy.issubdtype(data.dtype, numpy.floating):
             mask &= ~numpy.isnan(data)
         return ages[mask], data[mask]
 
@@ -604,7 +608,7 @@ class Worms(collections.UserList):
 
         Returns: list of numpy arrays, one array per worm. Each array has shape
             (n, 2), where n is the number of timepoints in the specified age range.
-            array[:,0] is the ages at each timepoint, and array[:,1] is the feature
+            array[:, 0] is the ages at each timepoint, and array[:, 1] is the feature
             values for each timepoint.
 
         Example:
@@ -656,7 +660,12 @@ class Worms(collections.UserList):
         Returns: numpy.array of shape (n_worms, n_features)
         """
         if len(features) == 1:
-            return self.get_feature(features[0])[:, numpy.newaxis]
+            out = self.get_feature(features[0])
+            # the feature-function might return a vector, not a scalar, so we might not actually
+            # need to add a new axis...
+            if out.ndim == 1:
+                out = out[:, numpy.newaxis]
+            return out
         else:
             return numpy.transpose([self.get_feature(feature) for feature in features])
 
@@ -681,25 +690,30 @@ class Worms(collections.UserList):
                 defined as age <= max_age and >= min_age. However, if
                 match_closest is True, the window will begin at the nearest age
                 to min_age, and end at the nearest age to max_age.
-            filter_valid: If True (default), data with value nan, even in the age
-                range requested, will not be returned.
+            filter_valid: If True (default), data with value nan, even in the
+                age range requested, will not be returned.
 
-        Returns: numpy.array of shape (total_timepoints, n_features), where
-            total_timepoints is the total number of timepoints (across all the
-            worms) within the age range, and n_features is the number of
-            specified timepoint features.
+        Returns: ages, data
+            ages: 1d array of length total_timepoints, where total_timepoints
+                is the total number of timepoints (across all the worms) within
+                the age range.
+            data: numpy.array of shape (total_timepoints, n_features), where
+                n_features is the number of specified timepoint features.
 
         If there are 100 worms, each with 12 timepoints, then
         get_timecourse_features('gfp', 'texture') will return an array of shape
-        (1200, 2).
+        (1200) containing the ages, and (1200, 2) containing the feature data.
         """
         data = []
         for feature in features:
-            data.append(numpy.concatenate(self.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid=False))[:,1])
+            ages, feature_data = numpy.concatenate(self.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid=False)).T
+            data.append(feature_data)
         data = numpy.transpose(data) # shape (n_timepoints, n_features)
         if filter_valid:
-            data = data[numpy.all(~numpy.isnan(data), axis=1)]
-        return data
+            mask = numpy.all(~numpy.isnan(data), axis=1)
+            data = data[mask]
+            ages = ages[mask]
+        return ages, data
 
     def group_by(self, keys):
         """Given a list of keys (one for each worm), return a dictionary mapping
@@ -836,8 +850,8 @@ class Worms(collections.UserList):
             X: array of shape (n_timepoints, n_features)
             y: array of shape (n_timepoints)
         """
-        X = self.get_timecourse_features(*features, min_age=min_age, max_age=max_age, age_feature=age_feature)
-        y = self.get_timecourse_features(target, min_age=min_age, max_age=max_age, age_feature=age_feature).squeeze()
+        X = self.get_timecourse_features(*features, min_age=min_age, max_age=max_age, age_feature=age_feature)[1]
+        y = self.get_timecourse_features(target, min_age=min_age, max_age=max_age, age_feature=age_feature)[1].squeeze()
         return X, y
 
     def _timecourse_plot_data(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age', color_by='lifespan'):
