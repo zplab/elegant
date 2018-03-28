@@ -116,7 +116,7 @@ class ExperimentAnnotator:
         assert set(self.timepoints.keys()).issuperset(all_annotations.keys())
         for timepoint_name, annotations in all_annotations.items():
             page_i = self.timepoint_indices[timepoint_name]
-            self.ris_widget.flipbook_pages[page_i].annotations = annotations
+            self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations)
         self.ris_widget.annotator.update_fields()
 
     def save_annotations(self):
@@ -129,6 +129,7 @@ class ExperimentAnnotator:
             self.annotations_dir.mkdir(exist_ok=True)
             with self.annotation_file.open('wb') as af:
                 pickle.dump(all_annotations, af)
+            print(f'{self.position_name}: {len(all_annotations)} timepoint annotations saved.')
 
     def prev_timepoint(self):
         self.flipbook.focus_prev_page()
