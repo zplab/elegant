@@ -128,31 +128,26 @@ class ExperimentAnnotator:
 
     def load_annotations(self):
         try:
-            with self.annotation_file.open('rb') as af:
-                all_annotations = pickle.load(af)
+            position_annotations, timepoint_annotations = load_data.read_annotation_file(self.annotation_file)
         except FileNotFoundError:
             self.notes.setPlainText('')
             return
-        self.position_annotations = all_annotations.pop('__global__', {})
+        self.position_annotations = position_annotations
         self.notes.setPlainText(self.position_annotations.get('notes', ''))
-        assert set(self.timepoints.keys()).issuperset(all_annotations.keys())
-        for timepoint_name, annotations in all_annotations.items():
+        assert set(self.timepoints.keys()).issuperset(timepoint_annotations.keys())
+        for timepoint_name, annotations in timepoint_annotations.items():
             page_i = self.timepoint_indices[timepoint_name]
             self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations)
         self.ris_widget.annotator.update_fields()
 
     def save_annotations(self):
         assert len(self.timepoints) == len(self.ris_widget.flipbook_pages)
-        all_annotations = {}
+        timepoint_annotations = {}
         for timepoint_name, page in zip(self.timepoints.keys(), self.ris_widget.flipbook_pages):
-            all_annotations[timepoint_name] = getattr(page, 'annotations', {})
+            timepoint_annotations[timepoint_name] = getattr(page, 'annotations', {})
         self.position_annotations['notes'] = self.notes.toPlainText()
         self.position_annotations['__last_page_annotated__'] = self.ris_widget.flipbook.current_page_idx
-        all_annotations['__global__'] = self.position_annotations
-        self.annotations_dir.mkdir(exist_ok=True)
-        with self.annotation_file.open('wb') as af:
-            pickle.dump(all_annotations, af)
-        print(f'Annotations auto-saved for {self.position_name}.')
+        load_data.write_annotation_file(self.annotation_file, self.position_annotations, timepoint_annotations)
 
     def prev_timepoint(self):
         self.flipbook.focus_prev_page()

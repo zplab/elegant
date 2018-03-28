@@ -93,13 +93,34 @@ def read_annotations(experiment_root):
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = collections.OrderedDict()
-    for annotations in sorted(experiment_root.glob('annotations/*.pickle')):
-        with annotations.open('rb') as af:
-            all_annotations = pickle.load(af)
-        position_annotations = all_annotations.pop('__global__', {})
-        timepoint_annotations = collections.OrderedDict(sorted(all_annotations.items()))
-        positions[annotations.stem] = (position_annotations, timepoint_annotations)
+    for annotation_file in sorted(experiment_root.glob('annotations/*.pickle')):
+        positions[annotations.stem] = read_annotation_file(annotation_file)
     return positions
+
+def read_annotation_file(annotation_file):
+    annotation_file = pathlib.Path(annotation_file)
+    with annotation_file.open('rb') as af:
+        all_annotations = pickle.load(af)
+    position_annotations = all_annotations.pop('__global__', {})
+    timepoint_annotations = collections.OrderedDict(sorted(all_annotations.items()))
+    return position_annotations, timepoint_annotations
+
+def write_annotations(experiment_root, positions):
+    """Converse of read_annotations(): write a set of annotation files back,
+    from a positions dictionary like that returned by read_annotations().
+    """
+    annotation_dir = pathlib.Path(experiment_root) / 'annotations'
+    for position_name, (position_annotations, timepoint_annotations) in positions.items():
+        annotation_file = annotation_dir / f'{position_name}.pickle'
+        write_annotation_file(annotation_file, position_annotations, timepoint_annotations)
+
+def write_annotation_file(annotation_file, position_annotations, timepoint_annotations):
+    annotation_file = pathlib.Path(annotation_file)
+    annotation_file.parent.mkdir(exist_ok=True)
+    all_annotations = dict(timepoint_annotations)
+    all_annotations['__global__'] = position_annotations
+    with annotation_file.open('wb') as af:
+        pickle.dump(all_annotations, af)
 
 def add_position_to_flipbook(rw, position):
     """ Add images from a single ordered position dictionary (as returned by

@@ -76,7 +76,7 @@ class StageField(annotator.AnnotationField):
                 else:
                     new_page_stage = page_stage
             page.annotations[self.name] = new_page_stage
-        self.recolor_pages()
+        self.update_widget(stage)
 
     def update_widget(self, value):
         if value is None:
