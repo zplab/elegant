@@ -12,6 +12,42 @@ class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
 
     def __init__(self, ris_widget, name='pose', mean_widths=None, width_pca_basis=None):
+        """Annotation field to record worm positions.
+
+        Shortcuts:
+            Note: these shortcuts apply to the centerline or width spline based
+                on which sub-window was last clicked in.
+            f / shift-f: increase/decrease overall smoothing factor of the
+            centerline or width spline
+            s: perform a smoothing operation on the centerline or width spline
+            r: reverse the spline direction
+            escape: start drawing centerline or width spline if none is extant
+            delete: delete selected centerline or width spline
+            shift while dragging: "fine control" mode to warp smaller areas.
+            double-click: append a new endpoint to the centerline
+            control-z /  shift-control-z (command-z / shift-command-z on mac):
+                undo / redo spline edits.
+
+        Parameters:
+            ris_widget: RisWidget instance
+            name: name that the annotations will be stored in.
+            mean_widths: numpy.ndarray giving mean worm widths to use as the
+                default widths value, or a dictionary mapping worm ages to mean
+                widths for that age. In the latter case, the method
+                get_age_from_page() must be implemented, either in a subclass
+                or via monkeypatch. This function must return an age (in
+                whatever units the dictionary uses) for a given worm based on
+                the flipbook page (i.e. using its .name or .annotations
+                attributes). For ages in between the ages provided by the
+                dictionary, PCAWidthCalculator will be used to interpolate an
+                estimated width profile.
+            width_pca_basis: list numpy.ndarrays providing an orthonormal PCA
+                basis for the widths (each vector must be the same length as the
+                mean_widths value). Used to perform PCA-based smoothing of the
+                width profile by projecting a given profile into the PCA basis.
+
+
+        """
         self.ris_widget = ris_widget
         self.outline = spline_outline.SplineOutline(ris_widget, Qt.QColor(0, 255, 0, 128))
         self.centerline = self.outline.center_spline

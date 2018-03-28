@@ -2,8 +2,8 @@
 
 import pathlib
 
-def add_experiment_images(rw, exp_dir, channels=('bf',), name_prefix='', timepoint_filter=None, image_ext='png'):
-    """Add files from a 'worm corral' experiment to the flipbook.
+def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None, image_ext='png'):
+    """Read files from a 'worm corral' experiment for further processing or analysis.
 
     Directory structure is assumed to be an experimental directory, with one or
     more position directories within. Inside each position directory are image
@@ -31,9 +31,8 @@ def add_experiment_images(rw, exp_dir, channels=('bf',), name_prefix='', timepoi
     stacks.
 
     Parameters:
-        rw: a ris_widget.RisWidget() instance
-        exp_dir: the path to an experimental directory.
-        channels: image names to load for each timepoint.
+        experiment_root: the path to an experimental directory.
+        channels: image names to acquire for each timepoint.
         name_prefix: By default, the flipbook will show the position and
             timepoint name for each set of channels loaded. If a name_prefix
             is supplied, it will be listed first. This is useful for
@@ -49,29 +48,36 @@ def add_experiment_images(rw, exp_dir, channels=('bf',), name_prefix='', timepoi
                     return timepoint < '2017-07-05'
         image_ext: the image filename extension.
 
-    Returns: the list of futures for the image-reading tasks provided by
-        rw.add_image_files_to_flipbook()
+    Returns: an ordered dictionary mapping position names to position dicts,
+        where each position dict is another ordered dictionary mapping timepoint
+        names to a list of image files, one image file per channel requested.
+
+    """
+    experiment_root = pathlib.Path(experiment_root)
+    positions = collections.OrderedDict()
+    for image_path in sorted(experiment_root.glob('*/* {}.{}'.format(channels[0], image_ext))):
+        position_name = image_path.parent.name
+        if position_name not in positions:
+            positions[position_name] = collections.OrderedDict()
+        timepoints = positions[position_name]
+        timepoint_name = image_path.stem.split(' ')[0]
+        if timepoint_filter is None or timepoint_filter(pos, timepoint_name):
+            channel_images = []
+            for channel in channels:
+                image_path = exp_dir / position_name / (timepoint_name + ' {}.{}'.format(channel, image_ext))
+                if not image_path.exists():
+                    raise RuntimeError('File not found: '.format(str(image_path)))
+                channel_images.append(image_path)
+            timepoints[timepoint_name] = channel_images
+    return positions
+
+
+def add_position_to_flipbook(rw, position):
+    """ Add images from a single ordered position dictionary (as returned by
+    scan_experiment_dir) to the ris_widget flipbook.
 
     To wait for all the image loading tasks to finish:
         from concurrent import futures
-        futs = add_experiment_images(rw, exp_dir)
-        futures.wait(futs)
-    """
-    exp_dir = pathlib.Path(exp_dir)
-    image_stacks = []
-    names = []
-    if name_prefix != '':
-        name_prefix += '/'
-    for image_path in sorted(exp_dir.glob('*/* {}.{}'.format(channels[0], image_ext))):
-        pos = image_path.parent.name
-        timepoint = image_path.stem.split(' ')[0]
-        if timepoint_filter is None or timepoint_filter(pos, timepoint):
-            names.append('{}{}/{}'.format(name_prefix, pos, timepoint))
-            image_stack = []
-            for channel in channels:
-                image_path = exp_dir / pos / (timepoint + ' {}.{}'.format(channel, image_ext))
-                if not image_path.exists():
-                    raise RuntimeError('File not found: '.format(str(image_path)))
-                image_stack.append(image_path)
-            image_stacks.append(image_stack)
-    return rw.add_image_files_to_flipbook(image_stacks, names)
+        futs = add_position_to_flipbook(rw, positions['001'])
+        futures.wait(futs)"""
+    rw.add_image_files_to_flipbook(position.values(), page_names=position.keys())
