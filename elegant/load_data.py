@@ -100,9 +100,15 @@ def read_annotations(experiment_root):
 def read_annotation_file(annotation_file):
     annotation_file = pathlib.Path(annotation_file)
     with annotation_file.open('rb') as af:
-        all_annotations = pickle.load(af)
-    position_annotations = all_annotations.pop('__global__', {})
-    timepoint_annotations = collections.OrderedDict(sorted(all_annotations.items()))
+        annotations = pickle.load(af)
+    if isinstance(annotations, (dict, collections.OrderedDict)):
+        # read in simple or old-style annotation dicts, with no position_annotations
+        # or with them stashed in a __global__ key
+        position_annotations = annotations.pop('__global__', {})
+        timepoint_annotations = annotations
+    else:
+        position_annotations, timepoint_annotations = annotations
+    timepoint_annotations = collections.OrderedDict(sorted(timepoint_annotations.items()))
     return position_annotations, timepoint_annotations
 
 def write_annotations(experiment_root, positions):
@@ -117,10 +123,8 @@ def write_annotations(experiment_root, positions):
 def write_annotation_file(annotation_file, position_annotations, timepoint_annotations):
     annotation_file = pathlib.Path(annotation_file)
     annotation_file.parent.mkdir(exist_ok=True)
-    all_annotations = dict(timepoint_annotations)
-    all_annotations['__global__'] = position_annotations
     with annotation_file.open('wb') as af:
-        pickle.dump(all_annotations, af)
+        pickle.dump((position_annotations, timepoint_annotations), af)
 
 def add_position_to_flipbook(rw, position):
     """ Add images from a single ordered position dictionary (as returned by
