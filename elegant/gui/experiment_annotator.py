@@ -8,10 +8,10 @@ from PyQt5 import Qt
 from ris_widget import shared_resources
 from ris_widget.overlay import base
 
-from . import util
+from .. import load_images
 
 class ExperimentAnnotator:
-    def __init__(self, ris_widget, experiment_root, worms, annotation_fields):
+    def __init__(self, ris_widget, experiment_root, positions, annotation_fields):
         """Set up a GUI for annotating an entire experiment.
 
         Annotations for each experiment position (i.e. each worm) are loaded
@@ -34,7 +34,7 @@ class ExperimentAnnotator:
             positions: ordered dictionary of position names (i.e. worm names)
                 mapping to ordered dictionaries of timepoint names, each of
                 which maps to a list of image paths to load for each timepoint.
-                Note: util.scan_experiment_dir() provides exactly these data.
+                Note: load_images.scan_experiment_dir() provides exactly this.
             annotation_fields: list of annotation fields to pass to
                 ris_widget.add_annotator()
 
@@ -47,29 +47,29 @@ class ExperimentAnnotator:
         self.positions = list(positions.values())
         self.position_i = None
         self.flipbook = ris_widget.flipbook
-        self.listener = NavListener(ris_widget)
-
-        self.widget = Qt.QGroupBox(self.experiment_root.name)
+        # self.listener = NavListener(ris_widget)
+        #
+        widget = Qt.QGroupBox(self.experiment_root.name)
         layout = Qt.QVBoxLayout()
         layout.setSpacing(0)
-        self.widget.setLayout(layout)
+        widget.setLayout(layout)
         worm_info = Qt.QHBoxLayout()
         worm_info.setSpacing(11)
         self.pos_label = Qt.QLabel()
-        worm_info.addWidget(self.pos_label)
+        worm_info.addWidget(self.pos_label, stretch=1)
         self._add_button(worm_info, 'Save Annotations', self.save_annotations)
-        layout.add_layout(worm_info)
+        layout.addLayout(worm_info)
         nav_buttons = Qt.QHBoxLayout()
         nav_buttons.setSpacing(11)
-        self._add_button(nav_buttons, '\N{LEFTWARDS ARROW TO BAR} Worm', self.prev_worm)
-        self._add_button(nav_buttons, '\N{UPWARDS ARROW} Time', self.prev_timepoint)
-        self._add_button(nav_buttons, '\N{DOWNWARDS ARROW} Time', self.next_timepoint)
-        self._add_button(nav_buttons, 'Worm \N{RIGHTWARDS ARROW TO BAR}', self.next_worm)
-        layout.add_layout(nav_buttons)
-        ris_widget.annotator.widget.layout().addWidget(self.widget)
+        self._add_button(nav_buttons, '\N{LEFTWARDS ARROW TO BAR}', self.prev_position)
+        self._add_button(nav_buttons, '\N{UPWARDS ARROW}', self.prev_timepoint)
+        self._add_button(nav_buttons, '\N{DOWNWARDS ARROW}', self.next_timepoint)
+        self._add_button(nav_buttons, '\N{RIGHTWARDS ARROW TO BAR}', self.next_position)
+        layout.addLayout(nav_buttons)
+        ris_widget.annotator.widget.layout().insertRow(0, widget)
 
-        Qt.QShortcut(Qt.Qt.Key_BracketLeft, ris_widget.annotator.widget, self.prev_worm)
-        Qt.QShortcut(Qt.Qt.Key_BracketRight, ris_widget.annotator.widget, self.next_worm)
+        Qt.QShortcut(Qt.Qt.Key_BracketLeft, ris_widget.annotator.widget, self.prev_position)
+        Qt.QShortcut(Qt.Qt.Key_BracketRight, ris_widget.annotator.widget, self.next_position)
         Qt.QShortcut(Qt.QKeySequence.Save, ris_widget.annotator.widget, self.save_annotations)
 
         self.load_position(0)
@@ -82,23 +82,26 @@ class ExperimentAnnotator:
     def load_position(self, i):
         if self.position_i is not None:
             self.save_annotations()
-        self.position_i = i
-        self.ris_widget.flipbook_pages.clear()
         if self.position_i == i:
             return []
+        self.position_i = i
+        self.ris_widget.flipbook_pages.clear()
         if i is not None:
             self.timepoints = self.positions[i]
             self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
-            self.pos_label.setText('Worm {}'.format(self.position_name))
+            self.pos_label.setText(f'{self.position_name} ({i}/{len(self.positions)})')
+            futures = load_images.add_position_to_flipbook(self.ris_widget, self.timepoints)
+            # need to load annotations after adding pages to flipbook, so that there
+            # will be at least dummy pages to append the annotations to...
             self.load_annotations()
-            return util.add_position_to_flipbook(self.ris_widget, self.timepoints)
+            return futures
         else:
             self.pos_label.setText('-')
             return []
 
     @property
     def position_name(self):
-        return self.position_names[self.position_i])
+        return self.position_names[self.position_i]
 
     @property
     def annotation_file(self):
@@ -110,7 +113,7 @@ class ExperimentAnnotator:
                 all_annotations = pickle.load(af)
         except FileNotFoundError:
             return
-        assert set(self.timepoints.keys()).issuperset(annotations.keys())
+        assert set(self.timepoints.keys()).issuperset(all_annotations.keys())
         for timepoint_name, annotations in all_annotations.items():
             page_i = self.timepoint_indices[timepoint_name]
             self.ris_widget.flipbook_pages[page_i].annotations = annotations
@@ -120,11 +123,12 @@ class ExperimentAnnotator:
         assert len(self.timepoints) == len(self.ris_widget.flipbook_pages)
         all_annotations = {}
         for timepoint_name, page in zip(self.timepoints.keys(), self.ris_widget.flipbook_pages):
-            if hasattr(page, 'annotations'):
+            if hasattr(page, 'annotations') and len(page.annotations) > 0:
                 all_annotations[timepoint_name] = page.annotations
-        self.annotations_dir.mkdir(exist_ok=True)
-        with self.annotation_file.open('wb') as af:
-            pickle.dump(all_annotations, af)
+        if len(all_annotations) > 0:
+            self.annotations_dir.mkdir(exist_ok=True)
+            with self.annotation_file.open('wb') as af:
+                pickle.dump(all_annotations, af)
 
     def prev_timepoint(self):
         self.flipbook.focus_prev_page()
@@ -132,10 +136,10 @@ class ExperimentAnnotator:
     def next_timepoint(self):
         self.flipbook.focus_next_page()
 
-    def prev_worm(self):
+    def prev_position(self):
         return self.load_position(max(0, self.position_i - 1))
 
-    def next_worm(self):
+    def next_position(self):
         return self.load_position(min(len(self.positions), self.position_i + 1))
 
 

@@ -45,8 +45,6 @@ class PoseAnnotation(annotator.AnnotationField):
                 basis for the widths (each vector must be the same length as the
                 mean_widths value). Used to perform PCA-based smoothing of the
                 width profile by projecting a given profile into the PCA basis.
-
-
         """
         self.ris_widget = ris_widget
         self.outline = spline_outline.SplineOutline(ris_widget, Qt.QColor(0, 255, 0, 128))

@@ -1,5 +1,6 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
+import collections
 import pathlib
 
 def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None, image_ext='png'):
@@ -64,7 +65,7 @@ def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None
         if timepoint_filter is None or timepoint_filter(pos, timepoint_name):
             channel_images = []
             for channel in channels:
-                image_path = exp_dir / position_name / (timepoint_name + ' {}.{}'.format(channel, image_ext))
+                image_path = experiment_root / position_name / (timepoint_name + ' {}.{}'.format(channel, image_ext))
                 if not image_path.exists():
                     raise RuntimeError('File not found: '.format(str(image_path)))
                 channel_images.append(image_path)
