@@ -2,6 +2,7 @@
 
 import collections
 import pathlib
+import pickle
 
 def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None, image_ext='png'):
     """Read files from a 'worm corral' experiment for further processing or analysis.
@@ -72,6 +73,33 @@ def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None
             timepoints[timepoint_name] = channel_images
     return positions
 
+def read_annotations(experiment_root):
+    """Read annotation data from an experiment directory.
+
+    Parameters:
+        experiment_root: the path to an experimental directory.
+
+    Returns: an ordered dictionary mapping position names to annotations,
+        where each annotation is a (position_annotations, timepoint_annotations)
+        pair. In this, position_annotations is a dict of "global" per-position
+        annotation information, while timepoint_annotations is an ordered dict
+        mapping timepoint names to annotation dictionaries (which themselves map
+        strings to annotation data).
+
+    Example:
+        positions = read_annotations('my_experiment')
+        position_annotations, timepoint_annotations = positions['009']
+        life_stage = timepoint_annotations['2017-04-23t0122']['stage']
+    """
+    experiment_root = pathlib.Path(experiment_root)
+    positions = collections.OrderedDict()
+    for annotations in sorted(experiment_root.glob('annotations/*.pickle')):
+        with annotations.open('rb') as af:
+            all_annotations = pickle.load(af)
+        position_annotations = all_annotations.pop('__global__', {})
+        timepoint_annotations = collections.OrderedDict(sorted(all_annotations.items()))
+        positions[annotations.stem] = (position_annotations, timepoint_annotations)
+    return positions
 
 def add_position_to_flipbook(rw, position):
     """ Add images from a single ordered position dictionary (as returned by

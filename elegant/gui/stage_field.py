@@ -6,15 +6,28 @@ from ris_widget.qwidgets import annotator
 from ris_widget import internal_util
 
 class StageField(annotator.AnnotationField):
-    ENABLABLE = True
     FIRST_COLOR = (255, 255, 255)
     LAST_COLOR = (184, 184, 184)
-    COLOR_CYCLE = itertools.cycle([(184, 255, 184), (255, 255, 184), (184, 184, 255), (255, 184, 184)])
+    COLOR_CYCLE = itertools.cycle([(184, 255, 184), (255, 255, 184), (184, 184, 255), (255, 184, 184), (255, 184, 255)])
 
-    def __init__(self, name='stage', stages=['egg', 'larva', 'adult', 'dead'], transitions=['hatch', 'adult', 'dead']):
+    def __init__(self, name='stage', stages=['egg', 'larva', 'adult', 'dead'], transitions=['hatch', 'adult', 'dead'], shortcuts=None):
+        """Annotate the life-stage of a worm.
+
+        Parameters:
+            name: annotation name
+            stages: list of life stages to annotate, generally starting with egg
+                and ending with dead.
+            transitions: names of the transitions between life stages.
+            shortcuts: shortcut keys to select the different transitions; if not
+                specified, the first letter of each transition will be used.
+        """
         assert len(transitions) == len(stages) - 1
         self.stages = stages
         self.transitions = transitions
+        if shortcuts is None:
+            # take the first letter of each as the shortcut
+            shortcuts = [transition[0] for transition in transitions]
+        self.shortcuts = shortcuts
         self.colors = {stages[0]: self.FIRST_COLOR, stages[-1]: self.LAST_COLOR}
         self.colors.update(zip(stages[1:-1], self.COLOR_CYCLE))
         self._ignore_changes = internal_util.Condition()
@@ -26,10 +39,12 @@ class StageField(annotator.AnnotationField):
         self.widget.setLayout(layout)
         self.label = Qt.QLabel()
         layout.addWidget(self.label)
-        for transition, next_stage in zip(self.transitions, self.stages[1:]):
+        for transition, key, next_stage in zip(self.transitions, self.shortcuts, self.stages[1:]):
             button = Qt.QPushButton(transition)
-            button.clicked.connect(self._make_transition_callback(next_stage))
+            callback = self._make_transition_callback(next_stage)
+            button.clicked.connect(callback)
             layout.addWidget(button)
+            Qt.QShortcut(key, self.widget, callback)
 
     def _make_transition_callback(self, next_stage):
         def callback():
