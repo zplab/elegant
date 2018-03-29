@@ -44,7 +44,7 @@ class StageField(annotator.AnnotationField):
             callback = self._make_transition_callback(next_stage)
             button.clicked.connect(callback)
             layout.addWidget(button)
-            Qt.QShortcut(key, self.widget, callback)
+            Qt.QShortcut(key, self.widget, callback, context=Qt.Qt.ApplicationShortcut)
 
     def _make_transition_callback(self, next_stage):
         def callback():

@@ -98,6 +98,16 @@ def read_annotations(experiment_root):
     return positions
 
 def read_annotation_file(annotation_file):
+    """Read a single annotation file.
+
+    Parameter:
+        annotation_file: path to an existing annotation file
+
+    Returns: (position_annotations, timepoint_annotations)
+        position_annotations: dict of "global" per-position annotations
+        timepoint_annotations: ordered dict mapping timepoint names to
+            annotation dictionaries (which map strings to annotation data)
+    """
     annotation_file = pathlib.Path(annotation_file)
     with annotation_file.open('rb') as af:
         annotations = pickle.load(af)
@@ -121,6 +131,14 @@ def write_annotations(experiment_root, positions):
         write_annotation_file(annotation_file, position_annotations, timepoint_annotations)
 
 def write_annotation_file(annotation_file, position_annotations, timepoint_annotations):
+    """Write a single annotation file.
+
+    Parameters:
+        annotation_file: path to an existing annotation file
+        position_annotations: dict of "global" per-position annotations
+        timepoint_annotations: ordered dict mapping timepoint names to
+            annotation dictionaries (which map strings to annotation data)
+    """
     annotation_file = pathlib.Path(annotation_file)
     annotation_file.parent.mkdir(exist_ok=True)
     with annotation_file.open('wb') as af:

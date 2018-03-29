@@ -82,10 +82,10 @@ class PoseAnnotation(annotator.AnnotationField):
 
         self.undo_button = Qt.QPushButton('Undo')
         self.undo_button.clicked.connect(self.undo)
-        Qt.QShortcut(Qt.QKeySequence.Undo, self.widget, self.undo)
+        Qt.QShortcut(Qt.QKeySequence.Undo, self.widget, self.undo, context=Qt.Qt.ApplicationShortcut)
         self.redo_button = Qt.QPushButton('Redo')
         self.redo_button.clicked.connect(self.redo)
-        Qt.QShortcut(Qt.QKeySequence.Redo, self.widget, self.redo)
+        Qt.QShortcut(Qt.QKeySequence.Redo, self.widget, self.redo, context=Qt.Qt.ApplicationShortcut)
         self._add_row(layout, self.undo_button, self.redo_button)
 
         self.draw_center_button = Qt.QPushButton('Draw Center')
@@ -110,7 +110,7 @@ class PoseAnnotation(annotator.AnnotationField):
 
         self.reverse_button = Qt.QPushButton('Reverse')
         self.reverse_button.clicked.connect(self.reverse_spline)
-        Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.reverse_spline)
+        Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.reverse_spline, context=Qt.Qt.ApplicationShortcut)
         self.fine_mode = Qt.QCheckBox('Fine Warping')
         self.fine_mode.setChecked(False)
         self.fine_mode.toggled.connect(self.toggle_fine_mode)
