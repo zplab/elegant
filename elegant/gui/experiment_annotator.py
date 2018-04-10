@@ -112,7 +112,18 @@ class ExperimentAnnotator:
             # need to load annotations after adding pages to flipbook, so that there
             # will be at least dummy pages to append the annotations to...
             self.load_annotations()
-            self.ris_widget.flipbook.current_page_idx = self.position_annotations.get('__last_page_annotated__', 0)
+            if '__last_timepoint_annotated__' in self.position_annotations:
+                timepoint_name = self.position_annotations['__last_timepoint_annotated__']
+                i = self.timepoint_indices.get(timepoint_name, 0)
+            elif '__last_page_annotated__' in self.position_annotations:
+                # older, deprecated style. TODO: delete this elif stanza after everyone has
+                # updated their annotation dicts...
+                i = self.position_annotations['__last_page_annotated__']
+                if i > len(self.ris_widget.flipbook_pages):
+                    i = 0
+            else:
+                i = 0
+            self.ris_widget.flipbook.current_page_idx = i
             return futures
         else:
             self.pos_label.setText('-')
@@ -150,7 +161,8 @@ class ExperimentAnnotator:
         for timepoint_name, page in zip(self.timepoints.keys(), self.ris_widget.flipbook_pages):
             self.timepoint_annotations[timepoint_name] = getattr(page, 'annotations', {})
         self.position_annotations['notes'] = self.notes.toPlainText()
-        self.position_annotations['__last_page_annotated__'] = self.ris_widget.flipbook.current_page_idx
+        current_timepoint_name = list(self.timepoints.keys())[self.ris_widget.flipbook.current_page_idx]
+        self.position_annotations['__last_timepoint_annotated__'] = current_timepoint_name
         load_data.write_annotation_file(self.annotation_file, self.position_annotations, self.timepoint_annotations)
 
     def prev_timepoint(self):
