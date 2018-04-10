@@ -4,7 +4,7 @@ import collections
 import pathlib
 import pickle
 
-def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None, image_ext='png'):
+def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, image_ext='png'):
     """Read files from a 'worm corral' experiment for further processing or analysis.
 
     Directory structure is assumed to be an experimental directory, with one or
@@ -34,7 +34,8 @@ def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None
 
     Parameters:
         experiment_root: the path to an experimental directory.
-        channels: image names to acquire for each timepoint.
+        channels: list/tuple of image names to acquire for each timepoint, or
+            a single string.
         name_prefix: By default, the flipbook will show the position and
             timepoint name for each set of channels loaded. If a name_prefix
             is supplied, it will be listed first. This is useful for
@@ -46,8 +47,8 @@ def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None
             This can be used to only load a range of positions or timepoints.
             For example, the following will load only timepoints before the
             given date:
-                def timepoint_filter(position, timepoint):
-                    return timepoint < '2017-07-05'
+                def timepoint_filter(position_name, timepoint_name):
+                    return timepoint_name < '2017-07-05'
         image_ext: the image filename extension.
 
     Returns: an ordered dictionary mapping position names to position dicts,
@@ -57,13 +58,15 @@ def scan_experiment_dir(experiment_root, channels=('bf',), timepoint_filter=None
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = collections.OrderedDict()
+    if isinstance(channels, str):
+        channels = [channels]
     for image_path in sorted(experiment_root.glob('*/* {}.{}'.format(channels[0], image_ext))):
         position_name = image_path.parent.name
         if position_name not in positions:
             positions[position_name] = collections.OrderedDict()
         timepoints = positions[position_name]
         timepoint_name = image_path.stem.split(' ')[0]
-        if timepoint_filter is None or timepoint_filter(pos, timepoint_name):
+        if timepoint_filter is None or timepoint_filter(position_name, timepoint_name):
             channel_images = []
             for channel in channels:
                 image_path = experiment_root / position_name / (timepoint_name + ' {}.{}'.format(channel, image_ext))
