@@ -133,9 +133,16 @@ class ExperimentAnnotator:
             self.notes.setPlainText('')
             return
         self.notes.setPlainText(self.position_annotations.get('notes', ''))
+        unknown_timepoints = []
         for timepoint_name, annotations in self.timepoint_annotations.items():
-            page_i = self.timepoint_indices[timepoint_name]
-            self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations)
+            if timepoint_name not in self.timepoint_indices:
+                unknown_timepoints.append(timepoint_name)
+            else:
+                page_i = self.timepoint_indices[timepoint_name]
+                self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations)
+        if len(unknown_timepoints) > 0:
+            print('Annotations were found for some timepoints that have not been loaded in the annotator.')
+            print('These annotations will be preserved.')
         self.ris_widget.annotator.update_fields()
 
     def save_annotations(self):
