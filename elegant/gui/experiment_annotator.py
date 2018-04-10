@@ -133,7 +133,7 @@ class ExperimentAnnotator:
             self.notes.setPlainText('')
             return
         self.notes.setPlainText(self.position_annotations.get('notes', ''))
-        for timepoint_name, annotations in timepoint_annotations.items():
+        for timepoint_name, annotations in self.timepoint_annotations.items():
             page_i = self.timepoint_indices[timepoint_name]
             self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations)
         self.ris_widget.annotator.update_fields()
