@@ -141,8 +141,8 @@ class ExperimentAnnotator:
         try:
             self.position_annotations, self.timepoint_annotations = load_data.read_annotation_file(self.annotation_file)
         except FileNotFoundError:
-            self.notes.setPlainText('')
-            return
+            self.position_annotations = {}
+            self.timepoint_annotations = {}
         self.notes.setPlainText(self.position_annotations.get('notes', ''))
         unknown_timepoints = []
         for timepoint_name, annotations in self.timepoint_annotations.items():
