@@ -68,10 +68,10 @@ class ExperimentAnnotator:
         layout.addLayout(worm_info)
         nav_buttons = Qt.QHBoxLayout()
         nav_buttons.setSpacing(11)
-        self._add_button(nav_buttons, '\N{LEFTWARDS ARROW TO BAR}', self.prev_position)
         self._add_button(nav_buttons, '\N{UPWARDS ARROW}', self.prev_timepoint)
         self._add_button(nav_buttons, '\N{DOWNWARDS ARROW}', self.next_timepoint)
-        self._add_button(nav_buttons, '\N{RIGHTWARDS ARROW TO BAR}', self.next_position)
+        self._prev_button = self._add_button(nav_buttons, '\N{LEFTWARDS ARROW TO BAR}', self.prev_position)
+        self._next_button = self._add_button(nav_buttons, '\N{RIGHTWARDS ARROW TO BAR}', self.next_position)
         layout.addLayout(nav_buttons)
         self.notes = Qt.QPlainTextEdit()
         self.notes.setPlaceholderText('notes')
@@ -92,6 +92,7 @@ class ExperimentAnnotator:
         button = Qt.QPushButton(title)
         button.clicked.connect(callback)
         layout.addWidget(button)
+        return button
 
     def load_position(self, name):
         self.load_position_index(self.position_names.index(name))
@@ -105,9 +106,12 @@ class ExperimentAnnotator:
         self.ris_widget.flipbook_pages.clear()
         self.position_annotations = {}
         if i is not None:
+            assert 0 <= i < len(self.position_names)
+            self._prev_button.setEnabled(i != 0)
+            self._next_button.setEnabled(i != len(self.position_names) - 1)
             self.timepoints = self.positions[i]
             self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
-            self.pos_label.setText(f'{self.position_name} ({i}/{len(self.positions)})')
+            self.pos_label.setText(f'{self.position_name} ({i+1}/{len(self.positions)})')
             futures = load_data.add_position_to_flipbook(self.ris_widget, self.timepoints)
             # need to load annotations after adding pages to flipbook, so that there
             # will be at least dummy pages to append the annotations to...
@@ -172,10 +176,10 @@ class ExperimentAnnotator:
         self.flipbook.focus_next_page()
 
     def prev_position(self):
-        return self.load_position_index(max(0, self.position_i - 1))
+        return self.load_position_index(self.position_i - 1)
 
     def next_position(self):
-        return self.load_position_index(min(len(self.positions), self.position_i + 1))
+        return self.load_position_index(self.position_i + 1)
 
 
 class ZoomListener(base.SceneListener):
