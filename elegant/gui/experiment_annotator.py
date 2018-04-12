@@ -68,9 +68,9 @@ class ExperimentAnnotator:
         layout.addLayout(worm_info)
         nav_buttons = Qt.QHBoxLayout()
         nav_buttons.setSpacing(11)
+        self._prev_button = self._add_button(nav_buttons, '\N{LEFTWARDS ARROW TO BAR}', self.prev_position)
         self._add_button(nav_buttons, '\N{UPWARDS ARROW}', self.prev_timepoint)
         self._add_button(nav_buttons, '\N{DOWNWARDS ARROW}', self.next_timepoint)
-        self._prev_button = self._add_button(nav_buttons, '\N{LEFTWARDS ARROW TO BAR}', self.prev_position)
         self._next_button = self._add_button(nav_buttons, '\N{RIGHTWARDS ARROW TO BAR}', self.next_position)
         layout.addLayout(nav_buttons)
         self.notes = Qt.QPlainTextEdit()
@@ -98,6 +98,11 @@ class ExperimentAnnotator:
         self.load_position_index(self.position_names.index(name))
 
     def load_position_index(self, i):
+        num_positions = len(self.position_names)
+        if i is not None and i < 0:
+            i += num_positions
+        if not (i is None or 0 <= i < num_positions):
+            raise ValueError('Invalid position index')
         if self.position_i is not None:
             self.save_annotations()
         if self.position_i == i:
@@ -106,9 +111,8 @@ class ExperimentAnnotator:
         self.ris_widget.flipbook_pages.clear()
         self.position_annotations = {}
         if i is not None:
-            assert 0 <= i < len(self.position_names)
             self._prev_button.setEnabled(i != 0)
-            self._next_button.setEnabled(i != len(self.position_names) - 1)
+            self._next_button.setEnabled(i != num_positions - 1)
             self.timepoints = self.positions[i]
             self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
             self.pos_label.setText(f'{self.position_name} ({i+1}/{len(self.positions)})')
