@@ -97,7 +97,8 @@ def read_annotations(experiment_root):
     experiment_root = pathlib.Path(experiment_root)
     positions = collections.OrderedDict()
     for annotation_file in sorted(experiment_root.glob('annotations/*.pickle')):
-        positions[annotations.stem] = read_annotation_file(annotation_file)
+        worm_name = annotation_file.stem
+        positions[worm_name] = read_annotation_file(annotation_file)
     return positions
 
 def read_annotation_file(annotation_file):
