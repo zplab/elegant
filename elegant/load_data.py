@@ -148,12 +148,12 @@ def write_annotation_file(annotation_file, position_annotations, timepoint_annot
     with annotation_file.open('wb') as af:
         pickle.dump((position_annotations, timepoint_annotations), af)
 
-def add_position_to_flipbook(rw, position):
+def add_position_to_flipbook(ris_widget, position):
     """ Add images from a single ordered position dictionary (as returned by
     scan_experiment_dir) to the ris_widget flipbook.
 
     To wait for all the image loading tasks to finish:
         from concurrent import futures
-        futs = add_position_to_flipbook(rw, positions['001'])
+        futs = add_position_to_flipbook(ris_widget, positions['001'])
         futures.wait(futs)"""
-    rw.add_image_files_to_flipbook(position.values(), page_names=position.keys())
+    ris_widget.add_image_files_to_flipbook(position.values(), page_names=position.keys())
