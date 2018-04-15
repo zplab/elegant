@@ -3,7 +3,6 @@
 import itertools
 from PyQt5 import Qt
 from ris_widget.qwidgets import annotator
-from ris_widget import internal_util
 
 class StageField(annotator.AnnotationField):
     FIRST_COLOR = (255, 255, 255)
@@ -30,7 +29,6 @@ class StageField(annotator.AnnotationField):
         self.shortcuts = shortcuts
         self.colors = {stages[0]: self.FIRST_COLOR, stages[-1]: self.LAST_COLOR}
         self.colors.update(zip(stages[1:-1], self.COLOR_CYCLE))
-        self._ignore_changes = internal_util.Condition()
         super().__init__(name)
 
     def init_widget(self):

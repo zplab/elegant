@@ -4,7 +4,6 @@ import collections
 
 from PyQt5 import Qt
 import numpy
-from ris_widget import internal_util
 from ris_widget.qwidgets import annotator
 from ris_widget.overlay import spline_outline
 
@@ -25,7 +24,7 @@ class PoseAnnotation(annotator.AnnotationField):
             delete: delete selected centerline or width spline
             shift while dragging: "fine control" mode to warp smaller areas.
             double-click: append a new endpoint to the centerline
-            control-z /  shift-control-z (command-z / shift-command-z on mac):
+            control-z / shift-control-z (command-z / shift-command-z on mac):
                 undo / redo spline edits.
 
         Parameters:
@@ -48,11 +47,7 @@ class PoseAnnotation(annotator.AnnotationField):
         """
         self.ris_widget = ris_widget
         self.outline = spline_outline.SplineOutline(ris_widget, Qt.QColor(0, 255, 0, 128))
-        self.centerline = self.outline.center_spline
-        self.widths = self.outline.width_spline
-        self.centerline.geometry_change_callbacks.append(self.on_centerline_change)
-        self.widths.geometry_change_callbacks.append(self.on_widths_change)
-        self._ignore_geometry_change = internal_util.Condition()
+        self.outline.geometry_change_callbacks.append(self.on_geometry_change)
         self.undo_stack = collections.deque(maxlen=100)
         self.redo_stack = collections.deque(maxlen=100)
         if mean_widths is None:
@@ -68,17 +63,16 @@ class PoseAnnotation(annotator.AnnotationField):
 
     def init_widget(self):
         self.widget = Qt.QGroupBox(self.name)
-        self._current_row = 0
-        layout = Qt.QGridLayout()
+        layout = Qt.QVBoxLayout()
         self.widget.setLayout(layout)
 
-        self.show_centerline = Qt.QCheckBox('Show Center')
+        self.show_centerline = Qt.QCheckBox('Center')
         self.show_centerline.setChecked(True)
         self.show_centerline.toggled.connect(self.show_or_hide_centerline)
-        self.show_outline = Qt.QCheckBox('Show Outline')
+        self.show_outline = Qt.QCheckBox('Outline')
         self.show_outline.setChecked(True)
         self.show_outline.toggled.connect(self.outline.setVisible)
-        self._add_row(layout, self.show_centerline, self.show_outline)
+        self._add_row(layout, Qt.QLabel('Show:'), self.show_centerline, self.show_outline)
 
         self.undo_button = Qt.QPushButton('Undo')
         self.undo_button.clicked.connect(self.undo)
@@ -88,41 +82,46 @@ class PoseAnnotation(annotator.AnnotationField):
         Qt.QShortcut(Qt.QKeySequence.Redo, self.widget, self.redo, context=Qt.Qt.ApplicationShortcut)
         self._add_row(layout, self.undo_button, self.redo_button)
 
-        self.draw_center_button = Qt.QPushButton('Draw Center')
+        self.draw_center_button = Qt.QPushButton('Center')
         self.draw_center_button.setCheckable(True)
         self.draw_center_button.clicked.connect(self.draw_centerline)
-        self.draw_width_button = Qt.QPushButton('Draw Widths')
+        self.draw_width_button = Qt.QPushButton('Widths')
         self.draw_width_button.setCheckable(True)
         self.draw_width_button.clicked.connect(self.draw_widths)
-        self._add_row(layout, self.draw_center_button, self.draw_width_button)
+        self._add_row(layout, Qt.QLabel('Draw:'), self.draw_center_button, self.draw_width_button)
 
-        self.smooth_center_button = Qt.QPushButton('Smooth Center')
-        self.smooth_center_button.clicked.connect(self.centerline.smooth)
-        self.smooth_width_button = Qt.QPushButton('Smooth Widths')
-        self.smooth_width_button.clicked.connect(self.widths.smooth)
-        self._add_row(layout, self.smooth_center_button, self.smooth_width_button)
+        self.smooth_center_button = Qt.QPushButton('Center')
+        self.smooth_center_button.clicked.connect(self.outline.center_spline.smooth)
+        self.smooth_width_button = Qt.QPushButton('Widths')
+        self.smooth_width_button.clicked.connect(self.outline.width_spline.smooth)
+        self._add_row(layout, Qt.QLabel('Smooth:'), self.smooth_center_button, self.smooth_width_button)
 
-        self.default_button = Qt.QPushButton('Default Widths')
+        self.default_button = Qt.QPushButton('Default')
         self.default_button.clicked.connect(self.set_widths_to_default)
-        self.pca_button = Qt.QPushButton('PCA(Widths)')
+        self.pca_button = Qt.QPushButton('PCA')
         self.pca_button.clicked.connect(self.pca_smooth_widths)
-        self._add_row(layout, self.default_button, self.pca_button)
+        self._add_row(layout, Qt.QLabel('Widths:'), self.default_button, self.pca_button)
 
         self.reverse_button = Qt.QPushButton('Reverse')
-        self.reverse_button.clicked.connect(self.reverse_spline)
-        Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.reverse_spline, context=Qt.Qt.ApplicationShortcut)
-        self.fine_mode = Qt.QCheckBox('Fine Warping')
+        self.reverse_button.clicked.connect(self.outline.reverse_spline)
+        Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.outline.reverse_spline, context=Qt.Qt.ApplicationShortcut)
+
+        self.fine_mode = Qt.QCheckBox('Fine')
         self.fine_mode.setChecked(False)
-        self.fine_mode.toggled.connect(self.toggle_fine_mode)
-        self._add_row(layout, self.reverse_button, self.fine_mode)
+        self.fine_mode.toggled.connect(self.outline.set_fine_warp)
+
+        lock_warp = Qt.QCheckBox('Lock')
+        lock_warp.setChecked(False)
+        lock_warp.toggled.connect(self.set_locked)
+        self._add_row(layout, lock_warp, self.fine_mode, self.reverse_button)
 
     def _add_row(self, layout, *widgets):
-        if len(widgets) == 1:
-            layout.addWidget(widgets[0], self._current_row, 0, 1, -1, Qt.Qt.AlignCenter)
-        else:
-            for i, widget in enumerate(widgets):
-                layout.addWidget(widget, self._current_row, i)
-        self._current_row += 1
+        hbox = Qt.QHBoxLayout()
+        layout.addLayout(hbox)
+        for widget in widgets:
+            sp = Qt.QSizePolicy(Qt.QSizePolicy.Ignored, Qt.QSizePolicy.Preferred)
+            widget.setSizePolicy(sp)
+            hbox.addWidget(widget, stretch=1)
 
     def get_age_from_page(self, flipbook_page):
         """Used for age-specific calculation of mean width profiles. If only
@@ -144,15 +143,11 @@ class PoseAnnotation(annotator.AnnotationField):
             age = self.get_age_from_page(self.page)
             return self.widths_calculator.mean_width_tck_for_age(age)
 
-    def on_centerline_change(self, center_tck):
+
+    def on_geometry_change(self, tcks):
+        center_tck, width_tck = tcks
         self.show_or_hide_centerline(self.show_centerline.isChecked())
-        self.on_geometry_change(center_tck, self.widths.geometry)
-
-    def on_widths_change(self, width_tck):
-        self.on_geometry_change(self.centerline.geometry, width_tck)
-
-    def on_geometry_change(self, center_tck, width_tck):
-        if not (self._ignore_geometry_change or self.centerline.warping or self.widths.warping):
+        if not (self.outline.center_spline.warping or self.outline.width_spline.warping):
             self.undo_stack.append(self.get_annotation()) # put current value on the undo stack
             self.redo_stack.clear()
             self._enable_buttons(center_tck, width_tck)
@@ -171,9 +166,7 @@ class PoseAnnotation(annotator.AnnotationField):
     def _update_widget(self, center_tck, width_tck):
         # called by update_widget and also when undoing / redoing
         self._enable_buttons(center_tck, width_tck)
-        with self._ignore_geometry_change:
-            self.centerline.geometry = center_tck
-            self.widths.geometry = width_tck
+        self.outline.geometry = (center_tck, width_tck)
 
     def undo(self):
         if len(self.undo_stack) > 0:
@@ -192,61 +185,52 @@ class PoseAnnotation(annotator.AnnotationField):
     def _enable_buttons(self, center_tck, width_tck):
         has_center = center_tck is not None
         has_center_and_widths = has_center and width_tck is not None
+        unlocked = not self.outline.center_spline.locked
         self.undo_button.setEnabled(len(self.undo_stack) > 0)
         self.redo_button.setEnabled(len(self.redo_stack) > 0)
-        self.smooth_center_button.setEnabled(has_center)
-        self.smooth_width_button.setEnabled(has_center_and_widths)
-        self.draw_center_button.setChecked(self.centerline.drawing)
-        self.draw_width_button.setEnabled(has_center)
-        self.draw_width_button.setChecked(self.widths.drawing)
-        self.default_button.setEnabled(self.widths_calculator is not None and has_center)
-        self.pca_button.setEnabled(self.widths_calculator is not None and has_center_and_widths)
-        self.reverse_button.setEnabled(has_center)
+        self.smooth_center_button.setEnabled(has_center and unlocked)
+        self.smooth_width_button.setEnabled(has_center_and_widths and unlocked)
+        self.draw_center_button.setEnabled(unlocked)
+        self.draw_center_button.setChecked(self.outline.center_spline.drawing)
+        self.draw_width_button.setEnabled(has_center and unlocked)
+        self.draw_width_button.setChecked(self.outline.width_spline.drawing)
+        self.default_button.setEnabled(self.widths_calculator is not None and has_center and unlocked)
+        self.pca_button.setEnabled(self.widths_calculator is not None and has_center_and_widths and unlocked)
+        self.reverse_button.setEnabled(has_center and unlocked)
+        self.fine_mode.setEnabled(unlocked)
+
+    def set_locked(self, locked):
+        self.outline.set_locked(locked)
+        self._enable_buttons(self.outline.center_spline.geometry, self.outline.width_spline.geometry)
 
     def set_widths_to_default(self):
-        self.widths.geometry = self.get_default_widths()
+        self.outline.width_spline.geometry = self.get_default_widths()
 
     def pca_smooth_widths(self):
         age = self.get_age_from_page(self.page)
-        self.widths.geometry = self.widths_calculator.pca_smooth_widths(age)
+        self.outline.width_spline.geometry = self.widths_calculator.pca_smooth_widths(age)
 
     def draw_centerline(self, draw):
-        with self._ignore_geometry_change:
-            self.centerline.geometry = None
+        self.outline.center_spline.geometry = None
         if draw:
-            self.centerline.start_drawing()
+            self.outline.center_spline.start_drawing()
 
     def draw_widths(self, draw):
-        with self._ignore_geometry_change:
-            self.widths.geometry = None
+        self.outline.width_spline.geometry = None
         if draw:
-            self.widths.start_drawing()
-
-    def reverse_spline(self):
-        if self.centerline.geometry is not None:
-            if self.widths.geometry is not None:
-                # Ignore this change so as not to add the width reversal to the
-                # undo stack separately from the centerline reversal. The latter
-                # will cause both reversals to be added to the stack.
-                with self._ignore_geometry_change:
-                    self.widths.reverse_spline()
-            self.centerline.reverse_spline()
+            self.outline.width_spline.start_drawing()
 
     def show_or_hide_centerline(self, show):
         # if show, then show the centerline.
         # if not, then only show if there is *no* centerline set: this way,
         # the line will be shown during manual drawing but hid once that line
         # is converted to a spline tck.
-        if show or self.centerline.geometry is None:
-            self.centerline.setPen(self.centerline.display_pen)
+        if show or self.outline.center_spline.geometry is None:
+            self.outline.center_spline.setPen(self.outline.center_spline.display_pen)
         else:
             # "hide" by setting transparent pen. This still allows for dragging
             # the hidden outline -- which using its hide() method prevents.
-            self.centerline.setPen(Qt.QPen(Qt.Qt.transparent))
-
-    def toggle_fine_mode(self, v):
-        self.centerline.fine_warp = v
-        self.widths.fine_warp = v
+            self.outline.center_spline.setPen(Qt.QPen(Qt.Qt.transparent))
 
 
 class PCAWidthCalculator:
