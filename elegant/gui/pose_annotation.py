@@ -58,7 +58,7 @@ class PoseAnnotation(annotator.AnnotationField):
             if width_pca_basis is not None:
                 if not numpy.allclose((width_pca_basis**2).sum(axis=1), numpy.ones(len(width_pca_basis))):
                     raise ValueError('a unit-length (non-normalized) PCA basis must be provided')
-            self.widths_calculator = PCAWidthCalculator(mean_widths, width_pca_basis, self.widths)
+            self.widths_calculator = PCAWidthCalculator(mean_widths, width_pca_basis, self.outline.width_spline)
         super().__init__(name)
 
     def init_widget(self):
