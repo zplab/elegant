@@ -186,8 +186,8 @@ class PoseAnnotation(annotator.AnnotationField):
         has_center = center_tck is not None
         has_center_and_widths = has_center and width_tck is not None
         unlocked = not self.outline.center_spline.locked
-        self.undo_button.setEnabled(len(self.undo_stack) > 0)
-        self.redo_button.setEnabled(len(self.redo_stack) > 0)
+        self.undo_button.setEnabled(len(self.undo_stack) > 0 and unlocked)
+        self.redo_button.setEnabled(len(self.redo_stack) > 0 and unlocked)
         self.smooth_center_button.setEnabled(has_center and unlocked)
         self.smooth_width_button.setEnabled(has_center_and_widths and unlocked)
         self.draw_center_button.setEnabled(unlocked)
