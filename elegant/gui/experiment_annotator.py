@@ -76,11 +76,11 @@ class ExperimentAnnotator:
         self.notes = Qt.QPlainTextEdit()
         self.notes.setPlaceholderText('notes')
         layout.addWidget(self.notes)
-        ris_widget.annotator.widget.layout().insertRow(0, widget)
+        ris_widget.annotator.layout().insertRow(0, widget)
 
-        Qt.QShortcut(Qt.Qt.Key_BracketLeft, ris_widget.annotator.widget, self.prev_position, context=Qt.Qt.ApplicationShortcut)
-        Qt.QShortcut(Qt.Qt.Key_BracketRight, ris_widget.annotator.widget, self.next_position, context=Qt.Qt.ApplicationShortcut)
-        Qt.QShortcut(Qt.QKeySequence.Save, ris_widget.annotator.widget, self.save_annotations, context=Qt.Qt.ApplicationShortcut)
+        Qt.QShortcut(Qt.Qt.Key_BracketLeft, ris_widget.annotator, self.prev_position, context=Qt.Qt.ApplicationShortcut)
+        Qt.QShortcut(Qt.Qt.Key_BracketRight, ris_widget.annotator, self.next_position, context=Qt.Qt.ApplicationShortcut)
+        Qt.QShortcut(Qt.QKeySequence.Save, ris_widget.annotator, self.save_annotations, context=Qt.Qt.ApplicationShortcut)
 
         if start_position is None:
             self.load_position_index(0)
