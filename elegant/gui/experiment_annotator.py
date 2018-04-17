@@ -57,9 +57,8 @@ class ExperimentAnnotator:
             self.alt_zoom = ZoomListener(ris_widget.alt_view)
 
         widget = Qt.QGroupBox(self.experiment_root.name)
-        layout = Qt.QVBoxLayout()
+        layout = Qt.QVBoxLayout(widget)
         layout.setSpacing(0)
-        widget.setLayout(layout)
         worm_info = Qt.QHBoxLayout()
         worm_info.setSpacing(11)
         self.pos_label = Qt.QLabel()
