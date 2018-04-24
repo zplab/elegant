@@ -56,7 +56,7 @@ class StageField(annotator.AnnotationField):
         prev_stage = self.stages[stage_i - 1]
         fb_i = self.flipbook.pages.index(self.page)
         for page_fb_i, page in enumerate(self.flipbook.pages):
-            page_stage = self.get_annotation(page, setdefault=True)
+            page_stage = self.get_annotation(page)
             if page_stage is None:
                 if page_fb_i < fb_i:
                     new_page_stage = prev_stage
