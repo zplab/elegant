@@ -12,7 +12,7 @@ from ris_widget.overlay import base
 from .. import load_data
 
 class ExperimentAnnotator:
-    def __init__(self, ris_widget, experiment_root, positions, annotation_fields, start_position=None):
+    def __init__(self, ris_widget, experiment_root, positions, annotation_fields, start_position=None, readonly=False):
         """Set up a GUI for annotating an entire experiment.
 
         Annotations for each experiment position (i.e. each worm) are loaded
@@ -44,6 +44,7 @@ class ExperimentAnnotator:
 
         """
         self.ris_widget = ris_widget
+        self.readonly = readonly
         ris_widget.add_annotator(annotation_fields)
         self.experiment_root = pathlib.Path(experiment_root)
         self.annotations_dir = self.experiment_root / 'annotations'
@@ -63,7 +64,9 @@ class ExperimentAnnotator:
         worm_info.setSpacing(11)
         self.pos_label = Qt.QLabel()
         worm_info.addWidget(self.pos_label, stretch=1)
-        self._add_button(worm_info, 'Save Annotations', self.save_annotations)
+        save = self._add_button(worm_info, 'Save Annotations', self.save_annotations)
+        if readonly:
+            save.setEnabled(False)
         layout.addLayout(worm_info)
         nav_buttons = Qt.QHBoxLayout()
         nav_buttons.setSpacing(11)
@@ -164,6 +167,8 @@ class ExperimentAnnotator:
         self.ris_widget.annotator.update_fields()
 
     def save_annotations(self):
+        if self.readonly == True:
+            return
         assert len(self.timepoints) == len(self.ris_widget.flipbook_pages)
         for timepoint_name, page in zip(self.timepoints.keys(), self.ris_widget.flipbook_pages):
             self.timepoint_annotations[timepoint_name] = getattr(page, 'annotations', {})
@@ -179,10 +184,11 @@ class ExperimentAnnotator:
         self.flipbook.focus_next_page()
 
     def prev_position(self):
-        return self.load_position_index(self.position_i - 1)
+        return self.load_position_index(max(0, self.position_i - 1))
 
     def next_position(self):
-        return self.load_position_index(self.position_i + 1)
+        last_i = len(self.position_names) - 1
+        return self.load_position_index(min(self.position_i + 1, last_i))
 
 
 class ZoomListener(base.SceneListener):
