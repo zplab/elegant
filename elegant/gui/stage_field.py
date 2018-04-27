@@ -22,6 +22,7 @@ class StageField(annotator.AnnotationField):
         """
         assert len(transitions) == len(stages) - 1
         self.stages = stages
+        self.stage_indices = {stage:i for i, stage in enumerate(stages)}
         self.transitions = transitions
         if shortcuts is None:
             # take the first letter of each as the shortcut
@@ -51,29 +52,27 @@ class StageField(annotator.AnnotationField):
 
     def set_stage(self, stage):
         self.update_annotation(stage)
-        stage_i = self.stages.index(stage)
-        # i will always be > 0
-        prev_stage = self.stages[stage_i - 1]
         fb_i = self.flipbook.pages.index(self.page)
-        for page_fb_i, page in enumerate(self.flipbook.pages):
+
+        # fix up pages after the newly-set stage
+        oldest_stage_i = self.stage_indices[stage]
+        for page in self.flipbook.pages[fb_i+1:]:
             page_stage = self.get_annotation(page)
-            if page_stage is None:
-                if page_fb_i < fb_i:
-                    new_page_stage = prev_stage
-                else:
-                    # page is current page or later
-                    new_page_stage = stage
+            page_stage_i = self.stage_indices.get(page_stage, -1) # will be < all others if stage is None
+            if page_stage_i > oldest_stage_i:
+                oldest_stage_i = page_stage_i
             else:
-                # page_stage is not None
-                page_stage_i = self.stages.index(page_stage)
-                if page_fb_i < fb_i and page_stage_i >= stage_i:
-                    new_page_stage = prev_stage
-                elif page_fb_i > fb_i and page_stage_i < stage_i:
-                    # page is current page or later
-                    new_page_stage = stage
-                else:
-                    new_page_stage = page_stage
-            page.annotations[self.name] = new_page_stage
+                page.annotations[self.name] = self.stages[oldest_stage_i]
+
+        # fix up pages before the newly-set stage
+        youngest_stage_i = self.stage_indices[stage] - 1 # we can never manually set the first stage
+        for page in self.flipbook.pages[fb_i-1::-1]:
+            page_stage = self.get_annotation(page)
+            page_stage_i = self.stage_indices.get(page_stage, len(self.stages)) # will be > all others if stage is None
+            if page_stage_i < youngest_stage_i:
+                oldest_stage_i = page_stage_i
+            else:
+                page.annotations[self.name] = self.stages[youngest_stage_i]
         self.update_widget(stage)
 
     def update_widget(self, value):
