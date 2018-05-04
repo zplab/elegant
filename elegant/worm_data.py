@@ -65,7 +65,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
             else:
                 prefix = name_prefix
             for name, header, data in _read_datafile(path, prefix, delimiter):
-                worms.append(Worm(name, header, data, last_timepoint_is_first_dead, age_scale, file_path=path))
+                worms.append(Worm(name, header, data, last_timepoint_is_first_dead, age_scale))
     worms.sort('lifespan')
     return worms
 
@@ -140,9 +140,10 @@ def meta_worms(grouped_worms, *features, age_feature='age', summary_features=('l
         meta_worm = Worm(group_name)
         meta_worm.n = len(worms)
         meta_worm.worms = worms
-        ages, data = worms.get_timecourse_features(*features, min_age=min_age, max_age=max_age, filter_valid=False)
+        ages, data = worms.get_timecourse_features(*features, min_age=min_age, max_age=max_age, age_feature=age_feature, filter_valid=False)
         ages_out = numpy.linspace(ages.min(), ages.max(), 100)
-        for feature_data in data.T:
+        meta_worm.td.age = ages_out
+        for feature, feature_data in zip(features, data.T):
             mask = numpy.isfinite(feature_data)
             feature_ages = ages[mask]
             feature_data = feature_data[mask]
@@ -167,7 +168,7 @@ class Worm(object):
     Convenience accessor functions for getting a range of timecourse measurements
     are provided.
     """
-    def __init__(self, name, feature_names=[], timepoint_data=[], last_timepoint_is_first_dead=True, age_scale=1, file_path=None):
+    def __init__(self, name, feature_names=[], timepoint_data=[], last_timepoint_is_first_dead=True, age_scale=1):
         """It is generally preferable to construct worms from a factory function
         such as read_worms or meta_worms, rather than using the constructor.
 
@@ -183,14 +184,10 @@ class Worm(object):
             age_scale: scale-factor for the ages read in. The values in the
                 "age" column and any column ending in '_age' will be multiplied
                 by this scalar. (Useful e.g. for converting hours to days.)
-            file_path: if not None, used for error reporting if the worm data
-                is invalid.
         """
         self.name = name
         self.td = _TimecourseData()
         vals_for_features = [[] for _ in feature_names]
-        if 'age' not in feature_names or 'timepoint' not in feature_names:
-            raise ValueError(f'')
         for timepoint in timepoint_data:
             # add each entry in the timepoint data to the corresponding list in
             # vals_for_features
