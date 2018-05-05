@@ -52,27 +52,19 @@ class StageField(annotator.AnnotationField):
 
     def set_stage(self, stage):
         self.update_annotation(stage)
+        # now fix up pages before this page to comply with newly set stage
         fb_i = self.flipbook.pages.index(self.page)
-
-        # fix up pages after the newly-set stage
-        oldest_stage_i = self.stage_indices[stage]
-        for page in self.flipbook.pages[fb_i+1:]:
-            page_stage = self.get_annotation(page)
-            page_stage_i = self.stage_indices.get(page_stage, -1) # will be < all others if stage is None
-            if page_stage_i > oldest_stage_i:
-                oldest_stage_i = page_stage_i
-            else:
-                page.annotations[self.name] = self.stages[oldest_stage_i]
-
-        # fix up pages before the newly-set stage
-        youngest_stage_i = self.stage_indices[stage] - 1 # we can never manually set the first stage
+        youngest_stage_i = self.stage_indices[stage] - 1
+        # we can never manually set the first stage, so youngest_stage_i is always >= 0
         for page in self.flipbook.pages[fb_i-1::-1]:
             page_stage = self.get_annotation(page)
             page_stage_i = self.stage_indices.get(page_stage, len(self.stages)) # will be > all others if stage is None
             if page_stage_i < youngest_stage_i:
-                oldest_stage_i = page_stage_i
+                youngest_stage_i = page_stage_i
             else:
                 page.annotations[self.name] = self.stages[youngest_stage_i]
+
+        # pages after this will be brought into compliance by update_widget
         self.update_widget(stage)
 
     def update_widget(self, value):
@@ -82,12 +74,21 @@ class StageField(annotator.AnnotationField):
             raise ValueError('Value {} not in list of stages.'.format(value))
         else:
             self.label.setText(value)
-        self.recolor_pages()
 
-    def recolor_pages(self):
+        # now ensure that all pages follow correct stage ordering, and set
+        # the page colors
+        oldest_stage_i = -1
         for page in self.flipbook.pages:
-            stage = self.get_annotation(page)
-            if stage is None:
+            page_stage = self.get_annotation(page)
+            page_stage_i = self.stage_indices.get(page_stage, -1) # will be < all others if stage is None
+            if page_stage_i > oldest_stage_i:
+                oldest_stage_i = page_stage_i
+            elif page_stage_i < oldest_stage_i:
+                # NB: if both are -1, then we haven't actually seen any annotations yet,
+                # so we shouldn't do anything. Hence the test above for strict inequality.
+                page_stage = page.annotations[self.name] = self.stages[oldest_stage_i]
+
+            if page_stage is None:
                 page.color = None
             else:
-                page.color = self.colors[stage]
+                page.color = self.colors[page_stage]

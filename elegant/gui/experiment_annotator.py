@@ -119,8 +119,11 @@ class ExperimentAnnotator:
             self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
             self.pos_label.setText(f'{self.position_name} ({i+1}/{len(self.positions)})')
             futures = load_data.add_position_to_flipbook(self.ris_widget, self.timepoints)
-            # need to load annotations after adding pages to flipbook, so that there
-            # will be at least dummy pages to append the annotations to...
+            for page in self.ris_widget.flipbook_pages:
+                # page.name is taken from the keys of the timepoints dictionary
+                # however, also store timepoint name in separate attr in case user
+                # edits page name for some reason
+                page._timepoint_name = page.name
             self.load_annotations()
             if '__last_timepoint_annotated__' in self.position_annotations:
                 timepoint_name = self.position_annotations['__last_timepoint_annotated__']
@@ -169,9 +172,8 @@ class ExperimentAnnotator:
     def save_annotations(self):
         if self.readonly == True:
             return
-        assert len(self.timepoints) == len(self.ris_widget.flipbook_pages)
-        for timepoint_name, page in zip(self.timepoints.keys(), self.ris_widget.flipbook_pages):
-            self.timepoint_annotations[timepoint_name] = getattr(page, 'annotations', {})
+        for page in self.ris_widget.flipbook_pages:
+            self.timepoint_annotations[page._timepoint_name] = getattr(page, 'annotations', {})
         self.position_annotations['notes'] = self.notes.toPlainText()
         current_timepoint_name = list(self.timepoints.keys())[self.ris_widget.flipbook.current_page_idx]
         self.position_annotations['__last_timepoint_annotated__'] = current_timepoint_name
