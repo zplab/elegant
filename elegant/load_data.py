@@ -156,4 +156,4 @@ def add_position_to_flipbook(ris_widget, position):
         from concurrent import futures
         futs = add_position_to_flipbook(ris_widget, positions['001'])
         futures.wait(futs)"""
-    ris_widget.add_image_files_to_flipbook(position.values(), page_names=position.keys())
+    return ris_widget.add_image_files_to_flipbook(position.values(), page_names=position.keys())

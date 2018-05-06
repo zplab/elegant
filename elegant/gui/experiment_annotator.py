@@ -12,7 +12,7 @@ from ris_widget.overlay import base
 from .. import load_data
 
 class ExperimentAnnotator:
-    def __init__(self, ris_widget, experiment_root, positions, annotation_fields, start_position=None, readonly=False):
+    def __init__(self, ris_widget, experiment_name, positions, annotation_fields, start_position=None, readonly=False):
         """Set up a GUI for annotating an entire experiment.
 
         Annotations for each experiment position (i.e. each worm) are loaded
@@ -31,7 +31,8 @@ class ExperimentAnnotator:
 
         Parameters:
             ris_widget: a RisWidget object
-            experiment_root: path to an experiment directory
+            experiment_name: name of experiment to display. If a filesystem
+                path, only the last component is shown.
             positions: ordered dictionary of position names (i.e. worm names)
                 mapping to ordered dictionaries of timepoint names, each of
                 which maps to a list of image paths to load for each timepoint.
@@ -46,10 +47,7 @@ class ExperimentAnnotator:
         self.ris_widget = ris_widget
         self.readonly = readonly
         ris_widget.add_annotator(annotation_fields)
-        self.experiment_root = pathlib.Path(experiment_root)
-        self.annotations_dir = self.experiment_root / 'annotations'
-        self.position_names = list(positions.keys())
-        self.positions = list(positions.values())
+        self._init_positions(positions)
         self.position_i = None
         self.flipbook = ris_widget.flipbook
 
@@ -57,7 +55,7 @@ class ExperimentAnnotator:
         if hasattr(ris_widget, 'alt_view'):
             self.alt_zoom = ZoomListener(ris_widget.alt_view)
 
-        widget = Qt.QGroupBox(self.experiment_root.name)
+        widget = Qt.QGroupBox(pathlib.Path(experiment_name).name)
         layout = Qt.QVBoxLayout(widget)
         layout.setSpacing(0)
         worm_info = Qt.QHBoxLayout()
@@ -90,6 +88,11 @@ class ExperimentAnnotator:
             self.load_position(start_position)
         atexit.register(self.save_annotations)
 
+    def _init_positions(self, positions):
+        # this function allows subclasses to re-interpret the positions parameter
+        self.position_names = list(positions.keys())
+        self.positions = list(positions.values())
+
     def _add_button(self, layout, title, callback):
         button = Qt.QPushButton(title)
         button.clicked.connect(callback)
@@ -118,12 +121,10 @@ class ExperimentAnnotator:
             self.timepoints = self.positions[i]
             self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
             self.pos_label.setText(f'{self.position_name} ({i+1}/{len(self.positions)})')
-            futures = load_data.add_position_to_flipbook(self.ris_widget, self.timepoints)
-            for page in self.ris_widget.flipbook_pages:
-                # page.name is taken from the keys of the timepoints dictionary
-                # however, also store timepoint name in separate attr in case user
-                # edits page name for some reason
-                page._timepoint_name = page.name
+            timepoint_names = self.timepoints.keys()
+            futures = self.load_timepoints()
+            for timepoint_name, page in zip(timepoint_names, self.ris_widget.flipbook_pages):
+                page._timepoint_name = timepoint_name
             self.load_annotations()
             if '__last_timepoint_annotated__' in self.position_annotations:
                 timepoint_name = self.position_annotations['__last_timepoint_annotated__']
@@ -142,13 +143,21 @@ class ExperimentAnnotator:
             self.pos_label.setText('-')
             return []
 
+    def load_timepoints(self):
+        return load_data.add_position_to_flipbook(self.ris_widget, self.timepoints)
+
     @property
     def position_name(self):
         return self.position_names[self.position_i]
 
     @property
+    def experiment_root(self):
+        first_image = next(iter(self.timepoints.values()))[0]
+        return first_image.parent.parent
+
+    @property
     def annotation_file(self):
-        return self.annotations_dir / (self.position_name + '.pickle')
+        return self.experiment_root / 'annotations' / (self.position_name + '.pickle')
 
     def load_annotations(self):
         try:
