@@ -31,9 +31,10 @@ class BlindedExperimentAnnotator(experiment_annotator.ExperimentAnnotator):
     def _init_positions(self, positions):
         self.position_names, self.positions = positions
 
+
     def load_timepoints(self):
         timepoint_paths = self.timepoints.values()
-        page_names = list(map(str,range(len(self.timepoints))))
+        page_names = list(map(str, range(len(self.timepoints))))
         image_names = [[image_path.name for image_path in image_paths] for image_paths in timepoint_paths]
         self.pos_label.setText(f'{self.position_i+1}/{len(self.positions)}')
         return self.ris_widget.add_image_files_to_flipbook(timepoint_paths, page_names, image_names)
