@@ -16,8 +16,8 @@ def compile_annotations(annotation_dir):
             annotations[position_fp.stem] = pickle.load(position_file)
     return annotations
 
-def find_skip_positions(annotations, good_annotation_kws=None, bad_annotation_kws=None,return_str=True):
-    """Find all of the positions to be skipped for an experiment with specified annotations
+def filter_positions(annotations, good_annotation_kws=None, bad_annotation_kws=None,return_str=True):
+    """Filter positions for an experiment based on notes in corresponding annotations
     
         Parameters
             annotations - An OrderedDict mapping position names to corresponding
