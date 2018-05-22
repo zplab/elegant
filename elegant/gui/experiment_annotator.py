@@ -48,6 +48,7 @@ class ExperimentAnnotator:
         self.readonly = readonly
         ris_widget.add_annotator(annotation_fields)
         self._init_positions(positions)
+        self.position_names_to_indices = {name: i for i, name in enumerate(self.position_names)}
         self.position_i = None
         self.flipbook = ris_widget.flipbook
 
@@ -60,6 +61,14 @@ class ExperimentAnnotator:
         layout.setSpacing(0)
         worm_info = Qt.QHBoxLayout()
         worm_info.setSpacing(11)
+        self.pos_editor = Qt.QLineEdit()
+        self.pos_editor.editingFinished.connect(self._on_pos_editing_finished)
+        maxlen = max(map(len, self.position_names))
+        self.pos_editor.setMaxLength(maxlen)
+        self.pos_editor.setAlignment(Qt.Qt.AlignCenter)
+        w = self.pos_editor.fontMetrics().boundingRect('0'*maxlen).width()
+        self.pos_editor.setFixedWidth(w + 14)
+        worm_info.addWidget(self.pos_editor)
         self.pos_label = Qt.QLabel()
         worm_info.addWidget(self.pos_label, stretch=1)
         save = self._add_button(worm_info, 'Save Annotations', self.save_annotations)
@@ -99,8 +108,16 @@ class ExperimentAnnotator:
         layout.addWidget(button)
         return button
 
+    def _on_pos_editing_finished(self):
+        name = self.pos_editor.text()
+        if name not in self.position_names_to_indices:
+            self.pos_editor.setText(self.position_name)
+            Qt.QMessageBox.warning(self.ris_widget.qt_object, 'Unknown Position', f'Position "{name}" is not defined.')
+        elif name != self.position_name:
+            self.load_position(name)
+
     def load_position(self, name):
-        self.load_position_index(self.position_names.index(name))
+        self.load_position_index(self.position_names_to_indices[name])
 
     def load_position_index(self, i):
         num_positions = len(self.position_names)
@@ -108,10 +125,10 @@ class ExperimentAnnotator:
             i += num_positions
         if not (i is None or 0 <= i < num_positions):
             raise ValueError('Invalid position index')
-        if self.position_i is not None:
-            self.save_annotations()
         if self.position_i == i:
             return []
+        if self.position_i is not None:
+            self.save_annotations()
         self.position_i = i
         self.ris_widget.flipbook_pages.clear()
         self.position_annotations = {}
@@ -120,7 +137,8 @@ class ExperimentAnnotator:
             self._next_button.setEnabled(i != num_positions - 1)
             self.timepoints = self.positions[i]
             self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
-            self.pos_label.setText(f'{self.position_name} ({i+1}/{len(self.positions)})')
+            self.pos_editor.setText(self.position_name)
+            self.pos_label.setText(f'({i+1}/{len(self.positions)})')
             timepoint_names = self.timepoints.keys()
             futures = self.load_timepoints()
             for timepoint_name, page in zip(timepoint_names, self.ris_widget.flipbook_pages):
@@ -140,7 +158,8 @@ class ExperimentAnnotator:
             self.ris_widget.flipbook.current_page_idx = i
             return futures
         else:
-            self.pos_label.setText('-')
+            self.pos_editor.setText('')
+            self.pos_label.setText('')
             return []
 
     def load_timepoints(self):
