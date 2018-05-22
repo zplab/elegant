@@ -47,7 +47,7 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
         lambda position_annotations: selection_by_kw(position_annotations, selection_kws), 
         invert_selection=invert_selection)
 
-def check_complete_annotations(annotations, stages):
+def check_stage_annotations(annotations, stages):
     """Check that a set of annotations are complete 
         
         Parameters
