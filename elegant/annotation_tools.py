@@ -2,7 +2,7 @@ import pickle
 import pathlib
 from collections import OrderedDict
 
-def filter_position(annotations, selection_criteria, invert_selection=False):
+def filter_positions(annotations, selection_criteria, invert_selection=False):
     """Filter positions for an experiment based on defined selection criteria
 
     Parameters
@@ -17,7 +17,7 @@ def filter_position(annotations, selection_criteria, invert_selection=False):
     """
     selected_positions = []
     for position_name, position_annotations in annotations.items():
-        if selection_criteria(*position_annotations):
+        if selection_criteria(position_annotations):
             selected_positions.append(position_name)
     
     if not invert_selection:
@@ -38,19 +38,14 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
             invert_selection - bool flag indicating whether to select filter
                 the selected positions in or out (True/False respectively)
     """
-    
-    selected_positions = []
-    for position_name, position_annotations in annotations.items():
+    def selection_by_kw(position_annotations, selection_kws):
         global_annotations, timepoint_annotations = position_annotations
-        
-        if any([kw in global_annotations['notes'] for kw in selection_kws]):
-            selected_positions.append(position_name)
-    if not invert_selection:
-        return selected_positions
-    else:
-        return [position 
-            for position in selected_positions 
-            if position not in annotations.keys()]
+        return any([kw in global_annotations['notes'] for kw in selection_kws])
+    
+    return filter_positions(
+        annotations, 
+        lambda position_annotations: selection_by_kw(position_annotations, selection_kws), 
+        invert_selection=invert_selection)
 
 def check_complete_annotations(annotations, stages):
     """Check that a set of annotations are complete 
@@ -65,20 +60,15 @@ def check_complete_annotations(annotations, stages):
         Returns
             bad_positions - a list of positions with incomplete annotations
     """
-    
-    bad_positions = []
-    for position_name, position_annotations in annotations.items():
+    def check_for_stages(position_annotations, stages):
         global_annotations, timepoint_annotations = position_annotations
-        
-        missing_stages = []
-        for stage in stages:
-            if stage not in timepoint_annotations.values():
-                missing_stages.append(stage)
-        if len(missing_stages) > 0:
-            print('Position {} is missing the annotations for the following stages'.format(
-                position_name, missing_stages))
-            bad_positions.append(position_name)
-    return bad_positions
+        return all([stage in timepoint_annotations.values() for stage in timepoint_annotations])
+    
+    return filter_positions(
+        annotations,
+        lambda position_annotations: check_for_stages(position_annotations, stages)
+        invert_selection=invert_selection)
+    
         
 
 def print_formatted_list(string_list):
