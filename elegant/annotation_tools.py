@@ -2,6 +2,31 @@ import pickle
 import pathlib
 from collections import OrderedDict
 
+def filter_position(annotations, selection_criteria, invert_selection=False):
+    """Filter positions for an experiment based on defined selection criteria
+
+    Parameters
+        annotations - An OrderedDict mapping position names to corresponding
+            annotations (returned by load_data.read_annotations)
+        selection_criteria - A function taking in a set of global and timepoint
+            annotations (returned as a tuple by load_data.read_annotations)
+            and returning a bool indicating whether those annotations satisfy
+            the criteria
+        invert_selection - bool flag indicating whether to select filter
+            the selected positions in or out (True/False respectively)
+    """
+    selected_positions = []
+    for position_name, position_annotations in annotations.items():
+        if selection_criteria(*position_annotations):
+            selected_positions.append(position_name)
+    
+    if not invert_selection:
+        return selected_positions
+    else:
+        return [position 
+            for position in selected_positions 
+            if position not in annotations.keys()]
+
 def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
     """Filter positions for an experiment based on notes in corresponding annotations
     
