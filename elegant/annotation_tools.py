@@ -41,7 +41,9 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
     
     selected_positions = []
     for position_name, position_annotations in annotations.items():
-        if any([kw in position_annotation['notes'] for kw in selection_kws]):
+        global_annotations, timepoint_annotations = position_annotations
+        
+        if any([kw in global_annotations['notes'] for kw in selection_kws]):
             selected_positions.append(position_name)
     if not invert_selection:
         return selected_positions
