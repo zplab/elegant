@@ -37,10 +37,11 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
     def selection_by_kw(position_annotations, selection_kws):
         global_annotations, timepoint_annotations = position_annotations
         return any([kw in global_annotations['notes'] for kw in selection_kws])
+    selection_by_kw = lambda position_annotations: selection_by_kw(position_annotations, selection_kws)
     
     return filter_positions(
         annotations, 
-        lambda position_annotations: selection_by_kw(position_annotations, selection_kws), 
+        selection_by_kw, 
         invert_selection=invert_selection)
 
 def check_stage_annotations(annotations, stages):
@@ -59,10 +60,11 @@ def check_stage_annotations(annotations, stages):
     def check_for_stages(position_annotations, stages):
         global_annotations, timepoint_annotations = position_annotations
         return all([stage in timepoint_annotations.values() for stage in timepoint_annotations])
+    check_for_stages = lambda position_annotations: check_for_stages(position_annotations, stages)
     
     return filter_positions(
         annotations,
-        lambda position_annotations: check_for_stages(position_annotations, stages)
+        check_for_stages,
         invert_selection=invert_selection)
     
 def print_formatted_list(string_list):
