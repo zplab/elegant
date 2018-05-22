@@ -25,7 +25,5 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
             for position in selected_positions 
             if position not in annotations.keys()]
 
-def filter_positions(annotations, selection_criteria
-
 def print_formatted_list(string_list):
     return "[\'" + "\',\'".join(string_list) + "\']"
