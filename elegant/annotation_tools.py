@@ -1,7 +1,3 @@
-import pickle
-import pathlib
-from collections import OrderedDict
-
 def filter_positions(annotations, selection_criteria, invert_selection=False):
     """Filter positions for an experiment based on defined selection criteria
 
@@ -69,7 +65,5 @@ def check_stage_annotations(annotations, stages):
         lambda position_annotations: check_for_stages(position_annotations, stages)
         invert_selection=invert_selection)
     
-        
-
 def print_formatted_list(string_list):
     return "[\'" + "\',\'".join(string_list) + "\']"
