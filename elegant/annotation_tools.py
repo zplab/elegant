@@ -65,7 +65,7 @@ def check_stage_annotations(annotations, stages):
     return filter_positions(
         annotations,
         check_for_stages,
-        invert_selection=invert_selection)
+        invert_selection=True) # Get positions whose stages are not all annotated
     
 def print_formatted_list(string_list):
     return "[\'" + "\',\'".join(string_list) + "\']"
