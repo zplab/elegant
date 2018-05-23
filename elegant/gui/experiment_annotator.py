@@ -82,8 +82,8 @@ class ExperimentAnnotator:
         self._add_button(nav_buttons, '\N{DOWNWARDS ARROW}', self.next_timepoint)
         self._next_button = self._add_button(nav_buttons, '\N{RIGHTWARDS ARROW TO BAR}', self.next_position)
         layout.addLayout(nav_buttons)
-        self.goodpos_indicator = Qt.QCheckBox(text='Is Good Position?')
-        layout.addWidget(self.goodpos_indicator)
+        self.exclude = Qt.QCheckBox(text='Exclude position')
+        layout.addWidget(self.exclude)
         self.notes = Qt.QPlainTextEdit()
         self.notes.setPlaceholderText('notes')
         layout.addWidget(self.notes)
@@ -186,7 +186,7 @@ class ExperimentAnnotator:
         except FileNotFoundError:
             self.position_annotations = {}
             self.timepoint_annotations = {}
-        self.goodpos_indicator.setChecked(self.position_annotations.get('is_good', True)) # Set to be good by default
+        self.exclude.setChecked(self.position_annotations.get('exclude', False)) # Set to include by default
         self.notes.setPlainText(self.position_annotations.get('notes', ''))
         unknown_timepoints = []
         for timepoint_name, annotations in self.timepoint_annotations.items():
@@ -206,8 +206,8 @@ class ExperimentAnnotator:
         for page in self.ris_widget.flipbook_pages:
             self.timepoint_annotations[page._timepoint_name] = getattr(page, 'annotations', {})
         self.position_annotations['notes'] = self.notes.toPlainText()
+        self.position_annotations['exclude'] = self.exclude.isChecked()
         current_timepoint_name = list(self.timepoints.keys())[self.ris_widget.flipbook.current_page_idx]
-        self.position_annotations['is_good'] = self.goodpos_indicator.isChecked()
         self.position_annotations['__last_timepoint_annotated__'] = current_timepoint_name
         load_data.write_annotation_file(self.annotation_file, self.position_annotations, self.timepoint_annotations)
 
