@@ -1,4 +1,4 @@
-def filter_positions(annotations, selection_criteria, invert_selection=False):
+def filter_positions(annotations, selection_criteria, invert_selection=False, filter_excluded=True):
     """Filter positions for an experiment based on defined selection criteria
 
     Parameters
@@ -13,15 +13,21 @@ def filter_positions(annotations, selection_criteria, invert_selection=False):
     """
     selected_positions = []
     for position_name, position_annotations in annotations.items():
+        #if position_name == '07': raise Exception
         if selection_criteria(position_annotations):
             selected_positions.append(position_name)
     
-    if not invert_selection:
-        return selected_positions
-    else:
-        return [position 
-            for position in selected_positions 
-            if position not in annotations.keys()]
+    if invert_selection:
+        selected_positions = [position 
+            for position in annotations.keys()
+            if position not in selected_positions]
+    
+    if filter_excluded:
+        selected_positions = [position
+            for position in selected_positions
+            if annotations[position][0]['exclude'] is False]
+    
+    return selected_positions
 
 def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
     """Filter positions for an experiment based on notes in corresponding annotations
@@ -34,10 +40,10 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
             invert_selection - bool flag indicating whether to select filter
                 the selected positions in or out (True/False respectively)
     """
-    def selection_by_kw(position_annotations, selection_kws):
+    def check_kws(position_annotations, selection_kws):
         global_annotations, timepoint_annotations = position_annotations
         return any([kw in global_annotations['notes'] for kw in selection_kws])
-    selection_by_kw = lambda position_annotations: selection_by_kw(position_annotations, selection_kws)
+    selection_by_kw = lambda position_annotations: check_kws(position_annotations, selection_kws)
     
     return filter_positions(
         annotations, 
@@ -59,12 +65,14 @@ def check_stage_annotations(annotations, stages):
     """
     def check_for_stages(position_annotations, stages):
         global_annotations, timepoint_annotations = position_annotations
-        return all([stage in timepoint_annotations.values() for stage in timepoint_annotations])
-    check_for_stages = lambda position_annotations: check_for_stages(position_annotations, stages)
+        stage_annotations = [timepoint_annotation['stage'] 
+            for timepoint_annotation in timepoint_annotations.values()]
+        return all([stage in stage_annotations for stage in stages])
+    selection_by_stage_annotation = lambda position_annotations: check_for_stages(position_annotations, stages)
     
     return filter_positions(
         annotations,
-        check_for_stages,
+        selection_by_stage_annotation,
         invert_selection=True) # Get positions whose stages are not all annotated
     
 def print_formatted_list(string_list):
