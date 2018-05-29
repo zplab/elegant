@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 def filter_positions(annotations, selection_criteria, invert_selection=False):
     """Filter positions for an experiment based on defined selection criteria
 
@@ -10,17 +12,20 @@ def filter_positions(annotations, selection_criteria, invert_selection=False):
             the criteria
         invert_selection - bool flag indicating whether to select filter
             the selected positions in or out (True/False respectively)
+    
+    Returns
+        OrderedDict representing the subset of supplied positions satisfying
+            selection criteria (i.e. mapping positions to annotations)
     """
-    selected_positions = []
+    selected_positions = OrderedDict()
     for position_name, position_annotations in annotations.items():
-        #if position_name == '07': raise Exception
         if selection_criteria(position_annotations):
-            selected_positions.append(position_name)
+            selected_positions[position_name] = position_annotations
     
     if invert_selection:
-        selected_positions = [position 
-            for position in annotations.keys()
-            if position not in selected_positions]
+        selected_positions = OrderedDict([(position_name, position_annotations)
+            for position_name, position_annotations in annotations.items()
+            if position_name not in selected_positions])
     
     return selected_positions
 
