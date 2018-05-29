@@ -31,7 +31,6 @@ class BlindedExperimentAnnotator(experiment_annotator.ExperimentAnnotator):
     def _init_positions(self, positions):
         self.position_names, self.positions = positions
 
-
     def load_timepoints(self):
         timepoint_paths = self.timepoints.values()
         page_names = list(map(str, range(len(self.timepoints))))

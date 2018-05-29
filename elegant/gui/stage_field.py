@@ -56,13 +56,14 @@ class StageField(annotator.AnnotationField):
         fb_i = self.flipbook.pages.index(self.page)
         youngest_stage_i = self.stage_indices[stage] - 1
         # we can never manually set the first stage, so youngest_stage_i is always >= 0
-        for page in self.flipbook.pages[fb_i-1::-1]:
-            page_stage = self.get_annotation(page)
-            page_stage_i = self.stage_indices.get(page_stage, len(self.stages)) # will be > all others if stage is None
-            if page_stage_i < youngest_stage_i:
-                youngest_stage_i = page_stage_i
-            else:
-                page.annotations[self.name] = self.stages[youngest_stage_i]
+        if fb_i > 0:    # Exclude update of previous pages if this is the first image
+            for page in self.flipbook.pages[fb_i-1::-1]:
+                page_stage = self.get_annotation(page)
+                page_stage_i = self.stage_indices.get(page_stage, len(self.stages)) # will be > all others if stage is None
+                if page_stage_i < youngest_stage_i:
+                    youngest_stage_i = page_stage_i
+                else:
+                    page.annotations[self.name] = self.stages[youngest_stage_i]
 
         # pages after this will be brought into compliance by update_widget
         self.update_widget(stage)
