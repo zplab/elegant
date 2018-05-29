@@ -276,6 +276,9 @@ def default_width_data(pixels_per_micron, experiment_temperature=None, age_facto
         experiment_temperature: used to (crudely) correct the width-vs-age data
             for the current experimental temperature.
         age_factor: further time-multiplier for age data, to use as necessary.
+            If your animals are growing faster than the default width estimator
+            expects (even after adjusting for temperature), pass a value < 1;
+            if growing slower pass a value > 1.
 
     Returns: (width_estimator, width_pca_basis)
         width_estimator: a WidthEstimator instance suitable to pass to
