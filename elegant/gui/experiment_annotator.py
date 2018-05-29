@@ -160,6 +160,7 @@ class ExperimentAnnotator:
             else:
                 i = 0
             self.ris_widget.flipbook.current_page_idx = i
+            self.ris_widget.flipbook.pages_view.setFocus()
             return futures
         else:
             self.pos_editor.setText('')
