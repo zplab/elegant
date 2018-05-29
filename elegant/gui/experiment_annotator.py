@@ -71,9 +71,11 @@ class ExperimentAnnotator:
         worm_info.addWidget(self.pos_editor)
         self.pos_label = Qt.QLabel()
         worm_info.addWidget(self.pos_label, stretch=1)
-        save = self._add_button(worm_info, 'Save Annotations', self.save_annotations)
+        save = self._add_button(worm_info, 'Save', self.save_annotations)
         if readonly:
             save.setEnabled(False)
+        self.exclude = Qt.QCheckBox(text='Exclude')
+        worm_info.addWidget(self.exclude)
         layout.addLayout(worm_info)
         nav_buttons = Qt.QHBoxLayout()
         nav_buttons.setSpacing(11)
@@ -82,9 +84,9 @@ class ExperimentAnnotator:
         self._add_button(nav_buttons, '\N{DOWNWARDS ARROW}', self.next_timepoint)
         self._next_button = self._add_button(nav_buttons, '\N{RIGHTWARDS ARROW TO BAR}', self.next_position)
         layout.addLayout(nav_buttons)
-        self.exclude = Qt.QCheckBox(text='Exclude position')
-        layout.addWidget(self.exclude)
         self.notes = Qt.QPlainTextEdit()
+        row_height = self.notes.fontMetrics().lineSpacing()
+        self.notes.setFixedHeight(3 * row_height)
         self.notes.setPlaceholderText('notes')
         layout.addWidget(self.notes)
         ris_widget.annotator.layout().insertRow(0, widget)
@@ -194,7 +196,7 @@ class ExperimentAnnotator:
                 unknown_timepoints.append(timepoint_name)
             else:
                 page_i = self.timepoint_indices[timepoint_name]
-                self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations)
+                self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations) # make a copy
         if len(unknown_timepoints) > 0:
             print('Annotations were found for some timepoints that have not been loaded in the annotator.')
             print('These annotations will be preserved.')

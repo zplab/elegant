@@ -3,6 +3,7 @@
 import collections
 import pathlib
 import pickle
+import json
 
 def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, image_ext='png'):
     """Read files from a 'worm corral' experiment for further processing or analysis.
@@ -146,10 +147,11 @@ def write_annotation_file(annotation_file, position_annotations, timepoint_annot
     annotation_file = pathlib.Path(annotation_file)
     annotation_file.parent.mkdir(exist_ok=True)
     with annotation_file.open('wb') as af:
-        pickle.dump((position_annotations, timepoint_annotations), af)
+        # convert from  OrderedDict or defaultdict or whatever to plain dict for output
+        pickle.dump((dict(position_annotations), dict(timepoint_annotations)), af)
 
 def add_position_to_flipbook(ris_widget, position):
-    """ Add images from a single ordered position dictionary (as returned by
+    """Add images from a single ordered position dictionary (as returned by
     scan_experiment_dir) to the ris_widget flipbook.
 
     To wait for all the image loading tasks to finish:
@@ -157,3 +159,27 @@ def add_position_to_flipbook(ris_widget, position):
         futs = add_position_to_flipbook(ris_widget, positions['001'])
         futures.wait(futs)"""
     return ris_widget.add_image_files_to_flipbook(position.values(), page_names=position.keys())
+
+def annotate_timestamps(experiment_root):
+    """Add timestamp data to the annotation file for each position in an experiment.
+
+    For each position, a "t0" annotation field is added, containing the timestamp
+    at which the first image for that position was acquired.
+    For each timepoint within a given position, an "experiment_age" annotation
+    field is added, containing the number of hours elapsed after the first image
+    was acquired for that position.
+    """
+    experiment_root = pathlib.Path(experiment_root)
+    positions = read_annotations(experiment_root)
+    positions = collections.defaultdict(lambda: ({}, {}), positions)
+    for metadata_path in sorted(experiment_root.glob('*/position_metadata.json')):
+        with metadata_path.open('r') as f:
+            position_metadata = json.load(f)
+        timepoints = [pm['timepoint'] for pm in position_metadata]
+        t0 = position_metadata[0]['timestamp']
+        experiment_ages = [(pm['timestamp'] - t0)/3600 for pm in position_metadata]
+        position_annotations, timepoint_annotations = positions[metadata_path.parent.name]
+        position_annotations.update(t0=t0)
+        for timepoint, experiment_age in zip(timepoints, experiment_ages):
+            timepoint_annotations.setdefault(timepoint, {}).update(experiment_age=experiment_age)
+    write_annotations(experiment_root, positions)
