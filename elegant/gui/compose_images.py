@@ -1,0 +1,130 @@
+# This code is licensed under the MIT License (see LICENSE file for details)
+
+import numpy
+
+from ris_widget.overlay import roi
+from zplib.image import colorize
+from zplib.image import pyramid
+
+def add_roi(ris_widget):
+    """Convenience function to add a rectangular ROI selector to the ris_widget.
+
+    Once added, the ROI can be drawn by clicking and releasing to start the ROI
+    drawing, then dragging the region to the desired size and clicking again.
+
+    To resize the ROI, click it to select, then drag the handles. To delete the
+    ROI, press delete when it is selected. Upon the next click, a deleted ROI
+    will start drawing again. To cancel drawing, press escape. To remove the ROI
+    entirely, use roi.remove()
+
+    Returns: roi instance.
+    """
+    return roi.RectROI(ris_widget)
+
+def compose_image(ris_widget, roi=None, downsample_factor=None, fast_downsample=False, layer_images=None):
+    """
+    Return an RGB, uint8 image representing the ris_widget image displayed.
+
+    This is better than taking a snapshot using the ris_widget tool, because it
+    returns a full-resolution image, or one downsampled with precise control.
+    In addition, if an ROI is provided, the image will be cropped to that ROI.
+
+    The image scaling (min, max, gamma), color tint, opacity, and blend mode are
+    taken from the ris_widget layers. The images can be taken from ris_widget
+    as well (default) or provided separately.
+
+    Parameters:
+        ris_widget: a ris_widget instance.
+        roi: a RectROI instance (e.g. provided by the add_roi() convenience
+            function) to provide the crop area. If None, or if no ROI is drawn,
+            the full image will be used.
+        downsample_factor: if not None, amount to shrink the image by (fold-change)
+        fast_downsample: if True and if downsample_factor is an integer, perform
+            no smoothing upon downsampling. If False, smooth the image before
+            downsampling to avoid aliasing.
+        layer_images: if not None, a list of images to scale/tint/crop/composite
+            using the ris_widget settings and ROI.
+    """
+    if downsample_factor is not None and fast_downsample:
+        fast_downsample = int(downsample_factor) != downsample_factor
+    images_out = []
+    use_roi = False
+    if roi is not None and roi.geometry is not None:
+        (x1, y1), (x2, y2) = numpy.round(roi.geometry).astype(int)
+        use_roi = True
+    images = []
+    colors = []
+    alphas = []
+    modes = []
+    if layer_images is None:
+        layer_images = [layer.image for layer in ris_widget.layers]
+    for image, layer in list(zip(layer_images, ris_widget.layers)):
+        if image is not None and layer.visible:
+            image = image.data
+            if use_roi:
+                image = image[x1:x2+1, y1:y2+1]
+            if downsample_factor is not None:
+                if fast_downsample:
+                    image[::int(downsample_factor), ::int(downsample_factor)]
+                else:
+                    image = pyramid.pyr_down(image, downsample_factor)
+            images.append(colorize.scale(image, layer.min, layer.max, layer.gamma, output_max=1))
+            colors.append(layer.tint[:3])
+            alphas.append(layer.tint[3])
+            modes.append(layer.blend_function)
+    composited, alpha = colorize.multi_blend(images, colors, alphas, modes)
+    if alpha != 1:
+        composited = colorize.blend(composited, numpy.zeros_like(composited), alpha)
+    return (composited * 255).astype(numpy.uint8)
+
+def generate_images_from_flipbook(ris_widget, roi=None, downsample_factor=None, fast_downsample=False):
+    """Yield a series of composited images from the ris_widget flipbook, using
+    the current image scalings and ROI. (See compose_image() documentation.)
+
+    This is useful for writing a movie from ris_widget images via the functions
+    in zplib.image.write_movie.
+    """
+    for layer_images in ris_widget.flipbook_pages:
+        yield scale_tint_and_crop(ris_widget, roi, downsample_factor, fast_downsample, layer_images)
+
+def pin_image_mode(image, noise_floor=200, new_mode=24000):
+    """Set an image's modal intensity to a specified value.
+
+    This is most useful for brightfield images, which may have different
+    exposures, but can be made almost perfectly uniform in brightness by
+    scaling by the image's histogram mode.
+
+    Parameters:
+        image: an image of uint8 or uint16 dtype
+        noise_floor: the "zero value" for the image (e.g. the camera noise floor)
+        new_mode: the value to set the mode of the image to.
+
+    Returns: modified image
+    """
+    mode = numpy.bincount(image.flat)[1:].argmax()+1 # ignore 0-valued pixels, which for heavily-vignetted images may be the mode
+    fimage = image.astype(numpy.float32)
+    fimage -= noise_floor
+    fimage *= (new_mode - noise_floor) / (mode - noise_floor)
+    fimage += noise_floor
+    fimage.clip(0, None, out=fimage)
+    return fimage.astype(image.dtype)
+
+def pin_flipbook_modes(ris_widget, layer=0, noise_floor=200, new_mode=24000):
+    """For every image in a given layer in the flipbook, pin its modal value
+    as described in pin_image_mode(). Images are modified in-place.
+
+    This is most useful for brightfield images, which may have different
+    exposures, but can be made almost perfectly uniform in brightness by
+    scaling by the image's histogram mode.
+
+    Parameters:
+        ris_widget: a ris_widget instance.
+        layer: the layer whose images should be modified (brightfield images
+            are generally layer 0).
+        noise_floor: the "zero value" for the image (e.g. the camera noise floor)
+        new_mode: the value to set the mode of the image to.
+    """
+    for layer_images in ris_widget.flipbook_pages:
+        image = layer_images[layer]
+        image.data[:] = pin_image_mode(image.data, noise_floor, new_mode)
+        image.refresh()
