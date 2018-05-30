@@ -91,6 +91,36 @@ def check_stage_annotations(annotations, stages):
         annotations,
         select_by_stage_annotation,
         invert_selection=True) # Get positions whose stages are not all annotated
-    
+
 def print_formatted_list(string_list):
     return "[\'" + "\',\'".join(string_list) + "\']"
+
+#==================================
+# How to load filtered positions into annotator
+from elegant import load_data
+
+# Wrapper around scan_experiment_directory
+def filter_positions_for_annotation(experiment_dir, positions_to_load, **sed_kws):
+    positions = load_data.scan_experiment_dir(experiment_dir, **sed_kws)
+    return OrderedDict([(position_name, position_images) 
+        for position_name, position_images in positions
+        if position_name in positions_to_load])
+
+# Doing things with a "function factory"
+def build_timepoint_filter(base_func, **var_assignments)
+    def wrapper(position_name, timepoint_name):
+        return base_func(position_name, timepoint_name, **var_assignments)
+    return wrapper
+
+def timepoint_filter_byposition(position_name, timepoint_name, positions_to_load):
+    return position_name in positions_to_load
+
+'''
+# To run with scan_experiment_directory
+experiment_directory = ...
+annotations = load_data.read_annotations(experiment_directory)
+timepoint_filter = build_timepoint_filter(timepoint_filter_byposition,
+    positions_to_load=filter_excluded(check_stage_annotations(annotations,['larva','adult','dead'])))
+load_data.scan_experiment_directory(experiment_directory, timepoint_filter=timepoint_filter)
+'''
+
