@@ -1,5 +1,52 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
+"""
+Useful tools for scaling and colorizing images that look like what you see in ris_widget.
 
+compose_image: takes the scalings from ris_widget, potentially with multiple
+colorized layers, and gives you a RGB image that looks just like that (with
+optional cropping to a specific region of interest defined by a box you can
+draw on the GUI).
+
+generate_images_from_flipbook: same, but does this for every flipbook page --
+useful for saving movies
+
+pin_image_mode: set an image's mode (peak of the intensity histogram) to a
+specific value. Useful for making brightfield images directly comparable, so
+that movies don't flicker and cause epilepsy :)
+
+pin_flipbook_modes: do the above for every brightfield image in the flipbook.
+Then you can adjust the min/max/gamma just so, set an ROI, and use
+generate_images_from_flipbook to save a movie.
+
+Example:
+
+from ris_widget import ris_widget
+import pathlib
+
+p = pathlib.Path('path/to/image_dir')
+rw = ris_widget.RisWidget()
+bf = sorted(p.glob('* bf.png'))
+gfp = [b.parent / (b.name.split(' ')[0] + ' gfp.png') for b in bf]
+af = [b.parent / (b.name.split(' ')[0] + ' green_yellow_excitation_autofluorescence.png') for b in bf]
+rw.add_image_files_to_flipbook(zip(bf, gfp, af))
+
+from zplib.gui import compose_images
+roi = compose_images.add_roi(rw)
+compose_images.pin_flipbook_modes(rw)
+
+# adjust tint colors, scalings, ROI, etc. in GUI
+
+# write a single image
+i = compose_images.compose_image(rw, roi)
+import freeimage
+freeimage.write(i, 'test.png')
+
+# write a whole movie
+from zplib.image import write_movie
+write_movie.write_movie(compose_image.generate_images_from_flipbook(rw, roi, downsample_factor=2.5), 'movie.mp4', framerate=24)
+
+
+"""
 import numpy
 
 from ris_widget.overlay import roi
