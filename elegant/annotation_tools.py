@@ -4,18 +4,20 @@ def filter_positions(annotations, selection_criteria, invert_selection=False):
     """Filter positions for an experiment based on defined selection criteria
 
     Parameters
-        annotations - An OrderedDict mapping position names to corresponding
-            annotations (returned by load_data.read_annotations)
-        selection_criteria - A function taking in a set of global and timepoint
-            annotations (returned as a tuple by load_data.read_annotations)
-            and returning a bool indicating whether those annotations satisfy
-            the criteria
+        annotations - An OrderedDict mapping position names to annotations 
+            (as returned by load_data.read_annotations)
+        selection_criteria - A function taking in a set of position annotations 
+            (as returned by load_data.read_annotations)and returning a bool 
+            indicating whether those annotations satisfy the criteria; e.g.,
+                def selection_criteria(position_annotations):
+                    global_positions, timepoint_annotations = position_annotations
+                    return global_positions['exclude'] is False
         invert_selection - bool flag indicating whether to select filter
             the selected positions in or out (True/False respectively)
     
     Returns
-        OrderedDict representing the subset of supplied positions satisfying
-            selection criteria (i.e. mapping positions to annotations)
+        OrderedDict of the subset of supplied positions satisfying selection 
+            criteria (i.e. mapping positions to annotations)
     """
     selected_positions = OrderedDict()
     for position_name, position_annotations in annotations.items():
@@ -30,7 +32,8 @@ def filter_positions(annotations, selection_criteria, invert_selection=False):
     return selected_positions
 
 def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
-    """Filter positions for an experiment based on notes in corresponding annotations
+    """Filter positions for an experiment based on the presence of kws
+        in the 'notes' field of its annotations
     
         Parameters
             annotations - An OrderedDict mapping position names to corresponding
@@ -39,6 +42,9 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
                 (a given position's annotations must require ALL of the specified kws)
             invert_selection - bool flag indicating whether to select filter
                 the selected positions in or out (True/False respectively)
+        Returns
+            OrderedDict of the subset of supplied positions satisfying selection 
+                criteria (i.e. mapping positions to annotations)
     """
     def check_kws(position_annotations, selection_kws):
         global_annotations, timepoint_annotations = position_annotations
@@ -51,11 +57,16 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
         invert_selection=invert_selection)
 
 def filter_excluded(annotations):
-    """Filter positions for an experiment based on exclusion flag in corresponding annotations
+    """Filter positions for an experiment based on exclusion flag in its
+        annotations
 
-    Parameters
-        annotations - An OrderedDict mapping position names to corresponding
-            annotations (returned by load_data.read_annotations)
+        Parameters
+            annotations - An OrderedDict mapping position names to annotations 
+                (returned by load_data.read_annotations)
+        
+        Returns
+            OrderedDict of the subset of supplied positions satisfying selection 
+                criteria (i.e. mapping positions to annotations)
     """
     
     def select_excluded(position_annotations):
@@ -92,35 +103,31 @@ def check_stage_annotations(annotations, stages):
         select_by_stage_annotation,
         invert_selection=True) # Get positions whose stages are not all annotated
 
-def print_formatted_list(string_list):
-    return "[\'" + "\',\'".join(string_list) + "\']"
-
-#==================================
-# How to load filtered positions into annotator
-from elegant import load_data
-
-# Wrapper around scan_experiment_directory
-def filter_positions_for_annotation(experiment_dir, positions_to_load, **sed_kws):
-    positions = load_data.scan_experiment_dir(experiment_dir, **sed_kws)
-    return OrderedDict([(position_name, position_images) 
-        for position_name, position_images in positions
-        if position_name in positions_to_load])
-
-# Doing things with a "function factory"
-def build_timepoint_filter(base_func, **var_assignments)
-    def wrapper(position_name, timepoint_name):
-        return base_func(position_name, timepoint_name, **var_assignments)
-    return wrapper
-
-def timepoint_filter_byposition(position_name, timepoint_name, positions_to_load):
-    return position_name in positions_to_load
-
-'''
-# To run with scan_experiment_directory
-experiment_directory = ...
-annotations = load_data.read_annotations(experiment_directory)
-timepoint_filter = build_timepoint_filter(timepoint_filter_byposition,
-    positions_to_load=filter_excluded(check_stage_annotations(annotations,['larva','adult','dead'])))
-load_data.scan_experiment_directory(experiment_directory, timepoint_filter=timepoint_filter)
-'''
+def build_position_filter(positions_to_load):
+    """Generates a position filtering function that can be used with
+        experiment_annotator.ExperimentAnnotator to load a subset of positions
+        from an experiment
+        
+        Parameters
+            positions_to_load - iterable of positions to select for within
+                a set of annotations
+        
+        Returns
+            filter_by_position - a function to be used with the timepoint_filter
+                keyword parameter; this function is implemented as a closure - 
+                a function in which some of its local variables are defined 
+                ahead of time using prespecified values (in this case, using 
+                positions_to_load; to use this function with the annotator,
+                one can call it as in the following example syntax:
+            
+            experiment_directory = 'path/to/experiment'
+            annotations = load_data.read_annotations(experiment_directory)
+            positions_to_load = filter_excluded(annotations)
+            timepoint_filter = build_position_filter(positions_to_load)
+            load_data.scan_experiment_directory(experiment_directory, 
+                timepoint_filter=timepoint_filter)
+    """
+    def filter_by_position(position_name, timepoint_name):
+        return position_name in positions_to_load
+    return filter_by_position
 
