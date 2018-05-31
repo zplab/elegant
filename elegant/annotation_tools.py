@@ -9,9 +9,13 @@ def filter_positions(annotations, selection_criteria, invert_selection=False):
         selection_criteria - A function taking in a set of position annotations 
             (as returned by load_data.read_annotations)and returning a bool 
             indicating whether those annotations satisfy the criteria; e.g.,
+            
                 def selection_criteria(position_annotations):
                     global_positions, timepoint_annotations = position_annotations
                     return global_positions['exclude'] is False
+            
+            See associated functions in this module for examples of how to 
+                implement appropriate functions (esp. closures).
         invert_selection - bool flag indicating whether to select filter
             the selected positions in or out (True/False respectively)
     
@@ -46,14 +50,17 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
             OrderedDict of the subset of supplied positions satisfying selection 
                 criteria (i.e. mapping positions to annotations)
     """
-    def check_kws(position_annotations, selection_kws):
-        global_annotations, timepoint_annotations = position_annotations
-        return any([kw in global_annotations['notes'] for kw in selection_kws])
-    select_by_kw = lambda position_annotations: check_kws(position_annotations, selection_kws)
+    
+    # Create a suitable function to use with filter_positions using a closure
+    def select_by_kw(selection_kws):
+        def check_kws(position_annotations):
+            global_annotations, timepoint_annotations = position_annotations
+            return any([kw in global_annotations['notes'] for kw in selection_kws])
+        return check_kws
     
     return filter_positions(
         annotations, 
-        select_by_kw, 
+        select_by_kw(selection_kws), 
         invert_selection=invert_selection)
 
 def filter_excluded(annotations):
@@ -91,16 +98,19 @@ def check_stage_annotations(annotations, stages):
         Returns
             bad_positions - a list of positions with incomplete annotations
     """
-    def check_for_stages(position_annotations, stages):
-        global_annotations, timepoint_annotations = position_annotations
-        stage_annotations = [timepoint_annotation['stage'] 
-            for timepoint_annotation in timepoint_annotations.values()]
-        return all([stage in stage_annotations for stage in stages])
-    select_by_stage_annotation = lambda position_annotations: check_for_stages(position_annotations, stages)
+    
+    # Create a suitable function to use with filter_positions using a closure
+    def select_by_state_annotation(stages):
+        def check_for_stages(position_annotations):
+            global_annotations, timepoint_annotations = position_annotations
+            stage_annotations = [timepoint_annotation['stage'] 
+                for timepoint_annotation in timepoint_annotations.values()]
+            return all([stage in stage_annotations for stage in stages])
+        return check_for_stages
     
     return filter_positions(
         annotations,
-        select_by_stage_annotation,
+        select_by_stage_annotation(stages),
         invert_selection=True) # Get positions whose stages are not all annotated
 
 def build_position_filter(positions_to_load):
