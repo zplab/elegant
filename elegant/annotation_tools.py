@@ -1,6 +1,6 @@
 from collections import OrderedDict
 
-def filter_positions(annotations, selection_criteria, invert_selection=False):
+def filter_positions(annotations, selection_criteria):
     """Filter positions for an experiment based on defined selection criteria
 
     Parameters
@@ -28,11 +28,6 @@ def filter_positions(annotations, selection_criteria, invert_selection=False):
         if selection_criteria(position_annotations):
             selected_positions[position_name] = position_annotations
     
-    if invert_selection:
-        selected_positions = OrderedDict([(position_name, position_annotations)
-            for position_name, position_annotations in annotations.items()
-            if position_name not in selected_positions])
-    
     return selected_positions
 
 def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
@@ -52,15 +47,13 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
     """
     
     # Create a suitable function to use with filter_positions using a closure
-    def select_by_kw(selection_kws):
-        def check_kws(position_annotations):
-            global_annotations, timepoint_annotations = position_annotations
-            return any([kw in global_annotations['notes'] for kw in selection_kws])
-        return check_kws
+    def select_by_kw(position_annotations):
+        global_annotations, timepoint_annotations = position_annotations
+        return any([kw in global_annotations['notes'] for kw in selection_kws])
     
     return filter_positions(
         annotations, 
-        select_by_kw(selection_kws), 
+        select_by_kw, 
         invert_selection=invert_selection)
 
 def filter_excluded(annotations):
@@ -100,17 +93,15 @@ def check_stage_annotations(annotations, stages):
     """
     
     # Create a suitable function to use with filter_positions using a closure
-    def select_by_state_annotation(stages):
-        def check_for_stages(position_annotations):
-            global_annotations, timepoint_annotations = position_annotations
-            stage_annotations = [timepoint_annotation['stage'] 
-                for timepoint_annotation in timepoint_annotations.values()]
-            return all([stage in stage_annotations for stage in stages])
-        return check_for_stages
+    def select_by_stage_annotation(position_annotations):
+        global_annotations, timepoint_annotations = position_annotations
+        stage_annotations = [timepoint_annotation['stage'] 
+            for timepoint_annotation in timepoint_annotations.values()]
+        return all([stage in stage_annotations for stage in stages])
     
     return filter_positions(
         annotations,
-        select_by_stage_annotation(stages),
+        select_by_stage_annotation,
         invert_selection=True) # Get positions whose stages are not all annotated
 
 def build_position_filter(positions_to_load):
