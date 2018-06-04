@@ -30,7 +30,7 @@ def filter_positions(annotations, selection_criteria):
     
     return selected_positions
 
-def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
+def filter_positions_by_kw(annotations, selection_kws):
     """Filter positions for an experiment based on the presence of kws
         in the 'notes' field of its annotations
     
@@ -53,8 +53,7 @@ def filter_positions_by_kw(annotations, selection_kws, invert_selection=False):
     
     return filter_positions(
         annotations, 
-        select_by_kw, 
-        invert_selection=invert_selection)
+        select_by_kw)
 
 def filter_excluded(annotations):
     """Filter positions for an experiment based on exclusion flag in its
@@ -101,8 +100,7 @@ def check_stage_annotations(annotations, stages):
     
     return filter_positions(
         annotations,
-        select_by_stage_annotation,
-        invert_selection=True) # Get positions whose stages are not all annotated
+        select_by_stage_annotation) # Get positions whose stages are not all annotated
 
 def build_position_filter(positions_to_load):
     """Generates a position filtering function that can be used with
