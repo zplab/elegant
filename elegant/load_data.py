@@ -60,7 +60,7 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
     To load only positions that weren't previously annotated as "exclude":
         experiment_root = 'path/to/experiment'
         positions = read_annotations(experiment_root)
-        good_positions = filter_positions(positions, filter_excluded)
+        good_positions = filter_annotations(positions, filter_excluded)
         def timepoint_filter(position_name, timepoint_name):
             return position_name in good_positions
         files = scan_experiment_directory(experiment_root, timepoint_filter=timepoint_filter)
@@ -89,14 +89,13 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
             timepoints[timepoint_name] = channel_images
     return positions
 
-def scan_good_positions(experiment_root, position_filter, channels='bf', image_ext='png'):
-    """Convenience function for loading only positions whose annotations meet some
-    criterion.
+def scan_positions(experiment_root, position_filter, channels='bf', image_ext='png'):
+    """Load positions whose annotations meet a specified criterion.
 
     Parameters:
         experiment_root: the path to an experimental directory.
-        position_filter: filter-function suitable to pass to filter_positions()
-            (see documentation for filter_positions.)
+        position_filter: filter-function suitable to pass to filter_annotations()
+            (see documentation for filter_annotations.)
         channels: list/tuple of image names to load for each timepoint, or
             a single string.
         image_ext: the image filename extension.
@@ -113,9 +112,9 @@ def scan_good_positions(experiment_root, position_filter, channels='bf', image_e
         files = scan_good_positions('path/to/experiment', filter_excluded)
     """
     positions = read_annotations(experiment_root)
-    good_positions = filter_positions(positions, position_filter)
+    selected_positions = filter_annotations(positions, position_filter)
     def timepoint_filter(position_name, timepoint_name):
-        return position_name in good_positions
+        return position_name in selected_positions and timepoint_name in positions[position_name][1]
     return scan_experiment_directory(experiment_directory, channels, timepoint_filter, image_ext)
 
 def add_position_to_flipbook(ris_widget, position):
@@ -201,7 +200,7 @@ def write_annotation_file(annotation_file, position_annotations, timepoint_annot
         # convert from  OrderedDict or defaultdict or whatever to plain dict for output
         pickle.dump((dict(position_annotations), dict(timepoint_annotations)), af)
 
-def filter_positions(positions, position_filter):
+def filter_annotations(positions, position_filter):
     """Filter annotation dictionary for an experiment based on some criteria.
 
     Parameters:
@@ -209,23 +208,27 @@ def filter_positions(positions, position_filter):
             by read_annotations)
         position_filter: A function that determines whether a given position
             should be included in the output. The function's signature must be:
-            position_filter(position_name, position_annotations, timepoint_annotations) -> bool
+            position_filter(position_name, position_annotations, timepoint_annotations)
             where position_name is the name of the position, position_annotations
             is a dict of "global" annotations for that position, and timepoint_annotations
             is a dict mapping timepoint names to annotation dicts. (These are
             just as returned by read_annotations &c.)
+            The function must return a bool or a list of bools. If a bool is
+            returned, the whole position will be included; if a list of bools,
+            then only the timepoints for which matching list entry is True will
+            be included.
 
-    Returns: OrderedDict of the subset of supplied positions for which position_filter
-        returned True.
+    Returns: OrderedDict of the subset of supplied positions/timepoints for
+        which position_filter returned True.
 
     Examples:
     Basic usage: read in a position dict, define a position_filter function, and
-    then call filter_positions(). Sample example position_filter functions are below.
+    then call filter_annotations(). Sample example position_filter functions are below.
 
         positions = read_annotations('/path/to/exp/root')
         def position_filter(position_name, position_annotations, timepoint_annotations):
             ...
-        new_positions = filter_positions(positions, position_filter)
+        new_positions = filter_annotations(positions, position_filter)
 
     To exclude all positions with the "exclude" keyword set:
         def position_filter(position_name, position_annotations, timepoint_annotations):
@@ -247,21 +250,28 @@ def filter_positions(positions, position_filter):
     filter_excluded() excludes all positions with the "exclude" keyword set, just
     as above. It's simple to use that filter:
         positions = read_annotations('/path/to/exp/root')
-        new_positions = filter_positions(positions, filter_excluded)
+        new_positions = filter_annotations(positions, filter_excluded)
     """
     selected_positions = OrderedDict()
     for position_name, annotations in positions.items():
         position_annotations, timepoint_annotations = annotations
-        if selection_criteria(position_name, position_annotations, timepoint_annotations):
-            selected_positions[position_name] = annotations
+        include = position_filter(position_name, position_annotations, timepoint_annotations)
+        try:
+            include = list(include)
+        except TypeError:
+            include = [include] * len(timepoint_annotations)
+        assert len(include) == len(timepoint_annotations)
+        selected_timepoints = collections.OrderedDict(tpa for tpa, i in zip(timepoint_annotations.items(), include) if i)
+        if len(selected_timepoints) > 0:
+            selected_positions[position_name] = position_annotations, selected_timepoints
     return selected_positions
 
 def filter_excluded(position_name, position_annotations, timepoint_annotations):
-    """Filter-function for filter_positions() to return non-excluded worms."""
+    """Filter-function for filter_annotations() to return non-excluded worms."""
     return position_annotations.get('exclude', True) # if not present, assume not excluded
 
 def filter_staged(position_name, position_annotations, timepoint_annotations):
-    """Filter-function for filter_positions() to return worms that have been
+    """Filter-function for filter_annotations() to return worms that have been
     stage-annotated fully and are noted as "dead"."""
     stages = [tp.get('stage') for tp in timepoint_annotations.values()]
     # NB: all(stages) below is True iff there is a non-None, non-empty-string
@@ -269,16 +279,39 @@ def filter_staged(position_name, position_annotations, timepoint_annotations):
     return all(stages) and stages[-1] == 'dead'
 
 def filter_good_complete(position_name, position_annotations, timepoint_annotations):
-    """Filter-function for filter_positions() to return only non-excluded worms
+    """Filter-function for filter_annotations() to return only non-excluded worms
     which have been completely annotated with life stages."""
     return (filter_excluded(position_name, position_annotations, timepoint_annotations) and
         filter_staged(position_name, position_annotations, timepoint_annotations))
 
 def filter_good_incomplete(position_name, position_annotations, timepoint_annotations):
-    """Filter-function for filter_positions() to return only non-excluded worms
+    """Filter-function for filter_annotations() to return only non-excluded worms
     which haven't been completely annotated with life stages."""
     return (filter_excluded(position_name, position_annotations, timepoint_annotations) and
         not filter_staged(position_name, position_annotations, timepoint_annotations))
+
+def filter_living_timepoints(position_name, position_annotations, timepoint_annotations):
+    """Filter-function for filter_annotations() to return only non-excluded worms
+    which have been completely annotated with life stages; of these, all timepoints
+    annotated as "egg" or "dead", except the last "egg" and first "dead" will be
+    excluded. (The non-excluded "egg" and "dead" allow us to define the hatch and
+    death times more carefully.)"""
+    if not filter_excluded(position_name, position_annotations, timepoint_annotations):
+        return False
+    stages = [tp.get('stage') for tp in timepoint_annotations.values()]
+    if not all(stages) or stages[-1] != 'dead':
+        return False
+    good_times = []
+    n = len(stages)
+    for i, stage in enumerate(stages):
+        if stage == 'egg':
+            keep = i < n-1 and stages[i+1] != 'egg'
+        elif stage == 'dead':
+            keep = i > 0 and stages[i-1] != 'dead'
+        else:
+            keep = True
+        good_times.append(keep)
+    return good_times
 
 def annotate_timestamps(experiment_root):
     """Add timestamp data to the annotation file for each position in an experiment.
@@ -296,10 +329,8 @@ def annotate_timestamps(experiment_root):
         with metadata_path.open('r') as f:
             position_metadata = json.load(f)
         timepoints = [pm['timepoint'] for pm in position_metadata]
-        t0 = position_metadata[0]['timestamp']
-        experiment_ages = [(pm['timestamp'] - t0)/3600 for pm in position_metadata]
+        timestamps = [pm['timestamp'] for pm in position_metadata]
         position_annotations, timepoint_annotations = positions[metadata_path.parent.name]
-        position_annotations.update(t0=t0)
-        for timepoint, experiment_age in zip(timepoints, experiment_ages):
-            timepoint_annotations.setdefault(timepoint, {}).update(experiment_age=experiment_age)
+        for timepoint, timestamp in zip(timepoints, experiment_ages):
+            timepoint_annotations.setdefault(timepoint, {}).update(timestamp=timestamp)
     write_annotations(experiment_root, positions)

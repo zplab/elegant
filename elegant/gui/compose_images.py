@@ -44,9 +44,8 @@ freeimage.write(i, 'test.png')
 # write a whole movie
 from zplib.image import write_movie
 write_movie.write_movie(compose_image.generate_images_from_flipbook(rw, roi, downsample_factor=2.5), 'movie.mp4', framerate=24)
-
-
 """
+
 import numpy
 
 from ris_widget.overlay import roi

@@ -8,7 +8,8 @@ from zplib.scalar_stats import regress
 from zplib.image import colorize
 from zplib import datafile
 
-def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_first_dead=True, age_scale=1):
+def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
+    calculate_lifespan=True, last_timepoint_is_first_dead=True, age_scale=1):
     """Read worm data files into a Worms object.
 
     Each file can be either a single-worm file (where the "timepoint" identifier
@@ -30,6 +31,15 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
     the first column labeled "name" or "worm", and a labeled "timepoint" column
     elsewhere.
 
+    Summary files containing worm-level data (i.e. lifespan &c., as opposed to
+    the timepoint-level annotations in the worm files) can also be provided.
+    If no lifespan data is present from a summary file, it will be calculated
+    if requested. If 'timestamp' and 'stage' columns are present, the various
+    ages (age, adult_age, ghost_age) and spans (lifespan, adultspan, &c.) will
+    be calculated therefrom. Failing that, if an 'age' column is available,
+    the lifespan will be calculated from that, as controlled by the
+    'last_timepoint_is_first_dead' paramter.
+
     Parameters:
         *path_globs: all non-keyword arguments are treated as paths to worm data
             files, or as glob expressions matching multiple such data files.
@@ -39,15 +49,24 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
             directories can be used to compute the prefix.
         delimiter: controls whether the data are assumed to be tab, comma, or
             otherwise delimited.
+        summary_globs: if not None, either a single glob expression (or file path)
+            or a list of same. These will be interpreted as summary data files
+            to load (i.e. files of worm-level data, such as lifespan &c.,
+            rather than timepoint-level annotations).
+        calculate_lifespan: if True and if no lifespan data is present, then
+            calculate lifespans (and other spans potentially), as described.
         last_timepoint_is_first_dead: if True, the last timepoint in the data
             file is assumed to represent the first time the worm was annotated
             as dead. Otherwise, the last timepoint is assumed to represent the
-            last time the worm was known to be alive.
-        age_scale: scale-factor for the ages read in. The values in the "age"
-            column and any column ending in '_age' will be multiplied by this
-            scalar. (Useful e.g. for converting hours to days.)
+            last time the worm was known to be alive. Only used when lifespans
+            are auto-calculated and when there are no 'timestamp' and 'stage'
+            columns.
+        age_scale: scale-factor for the ages/spans read in. The values in the "age"
+            column and any column ending in "_age" will be multiplied by this
+            scalar. Likewise for any summary columns ending in "span".
+            (This is useful e.g. for converting hours to days.)
 
-    Returns: Worms object
+    Returns: Worms object, sorted by lifespan (if possible)
 
     Examples:
         worms = read_worms('/path/to/spe-9/datafiles/*.csv', name_prefix='spe-9 ', delimiter=',')
@@ -59,14 +78,42 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', last_timepoint_is_fi
     """
     worms = Worms()
     for path_glob in path_globs:
-        for path in map(pathlib.Path, glob.iglob(str(path_glob), recursive=True)):
+        paths = glob.glob(str(path_glob), recursive=True)
+        if len(paths) == 0:
+            raise FileNotFoundError(f'"{path_glob}" matches no files.')
+        for path in map(pathlib.Path, paths):
             if callable(name_prefix):
                 prefix = name_prefix(path)
             else:
                 prefix = name_prefix
             for name, header, data in _read_datafile(path, prefix, delimiter):
-                worms.append(Worm(name, header, data, last_timepoint_is_first_dead, age_scale))
-    worms.sort('lifespan')
+                worms.append(Worm(name, header, data, age_scale))
+    if isinstance(summary_globs, (str, pathlib.Path)):
+        summary_globs = [summary_globs]
+    elif summary_globs is None:
+        summary_globs = []
+    for path_glob in summary_globs:
+        paths = glob.glob(str(path_glob), recursive=True)
+        if len(paths) == 0:
+            raise FileNotFoundError(f'"{path_glob}" matches no files.')
+        for path in paths:
+            worms.read_summary_data(path, delimiter=delimiter, span_scale=age_scale)
+
+    if calculate_lifespan and not all(hasattr(w, 'lifespan') for w in worms):
+        if all(hasattr(w.td, 'timepoint') and hasattr(w.td, 'stage') for w in worms):
+            for w in worms:
+                try:
+                    w.calculate_ages_and_spans()
+                except (NameError, ValueError):
+                    print(f'could not calculate lifespan for worm {w.name}')
+        elif all(hasattr(w.td, 'age') for w in worms):
+            for w in worms:
+                try:
+                    w.calculate_lifespan_simple(last_timepoint_is_first_dead)
+                except (NameError, ValueError):
+                    print(f'could not calculate lifespan for worm {w.name}')
+    if all(hasattr(w, 'lifespan') for w in worms):
+        worms.sort('lifespan')
     return worms
 
 def _read_datafile(path, prefix, delimiter):
@@ -168,7 +215,7 @@ class Worm(object):
     Convenience accessor functions for getting a range of timecourse measurements
     are provided.
     """
-    def __init__(self, name, feature_names=[], timepoint_data=[], last_timepoint_is_first_dead=True, age_scale=1):
+    def __init__(self, name, feature_names=[], timepoint_data=[], age_scale=1):
         """It is generally preferable to construct worms from a factory function
         such as read_worms or meta_worms, rather than using the constructor.
 
@@ -177,10 +224,6 @@ class Worm(object):
             feature_names: names of the timecourse features measured for
                 this animal
             timepoint_data: for each timepoint, each of the measured features.
-            last_timepoint_is_first_dead: if True, the last timepoint in the
-                data file is assumed to represent the first time the worm was
-                annotated as dead. Otherwise, the last timepoint is assumed to
-                represent the last time the worm was known to be alive.
             age_scale: scale-factor for the ages read in. The values in the
                 "age" column and any column ending in '_age' will be multiplied
                 by this scalar. (Useful e.g. for converting hours to days.)
@@ -198,11 +241,70 @@ class Worm(object):
             if feature_name == 'age' or feature_name.endswith('_age'):
                 arr *= age_scale
             setattr(self.td, feature_name, arr)
-        if hasattr(self.td, 'age'):
-            if last_timepoint_is_first_dead:
-                self.lifespan = self.td.age[-2:].mean() # midpoint between last-alive and first-dead
-            else:
-                self.lifespan = self.td.age[-1] + (self.td.age[-1] - self.td.age[-2])/2 # halfway through the next interval, assumes equal intervals
+
+    def calculate_lifespan_simple(self, last_timepoint_is_first_dead=True):
+        """Calculate the lifespan of each animal using a simplistic method.
+
+        Parameters:
+            last_timepoint_is_first_dead: if True, the last timepoint in the
+                data file is assumed to represent the first time the worm was
+                annotated as dead. The death time is assumed to be halfway
+                between the last-alive and first-dead time.
+                Otherwise, the last timepoint is assumed to represent the last
+                time the worm was known to be alive. In this case, the last
+                sample interval is calculated, and the death time is assumed to
+                be half a sample interval after the last-alive time.
+        """
+        if last_timepoint_is_first_dead:
+            self.lifespan = self.td.age[-2:].mean() # midpoint between last-alive and first-dead
+        else:
+            self.lifespan = self.td.age[-1] + (self.td.age[-1] - self.td.age[-2])/2 # halfway through the next interval, assuming equal intervals
+
+    def calculate_ages_and_spans(self):
+        """Calculate ages and spans (in hours) from annotated stage data.
+
+        Requires 'stage' and 'timestamp' timecourse data fields. Calculates the
+        following timecourse data:
+            age
+            adult_age
+            ghost_age
+
+        Calculates the following summary data:
+            lifespan
+            [xxx]_span for each non-egg, non-dead stage
+        """
+        hours = (self.td.timestamp - self.td.timestamp[0]) / 3600
+        stages, indices = numpy.unique(self.td.stage, return_index=True)
+        order = indices.argsort()
+        stages = stages[order]
+        indices = indices[order]
+        if stages[0] == 'egg':
+            # had an egg-visible timepoint: assume hatch was halfway between the
+            # last egg-seen time and first larva-seen time.
+            hatched_i = indices[1]
+            hatch_time = hours[hatched_i-1:hatched_i+1].mean()
+            stages = stages[1:]
+            indices = indices[1:]
+        else:
+            # no egg timepoint. Best guess for hatch time is the first larva-seen time.
+            hatch_time = hours[0]
+        self.td.age = hours - hatch_time
+        transition_times = [hatch_time] + [hours[i-1:i+1].mean() for i in indices[1:]]
+        transition_times = numpy.array(transition_times)
+        spans = transition_times[1:] - transition_times[:-1]
+        for stage, span in zip(stages[:-1], spans):
+            setattr(self, f'{stage}span', span)
+        if stages[-1] != 'dead':
+            raise ValueError('No timepoint with "dead" label is present; cannot calculate lifespan.')
+        death_time = transition_times[-1]
+        self.td.ghost_age = hours - death_time
+        self.lifespan = death_time - hatch_time
+        try:
+            adult_i = list(stages).index('adult')
+        except ValueError:
+            raise ValueError('No timepoint with "adult" label is present; cannot calculate adult_age.')
+        adult_time = transition_times[adult_i]
+        self.td.adult_age = hours - adult_time
 
     def __repr__(self):
         return f'Worm("{self.name}")'
@@ -331,7 +433,7 @@ class Worms(collections.UserList):
         else:
             return self.data[i]
 
-    def read_summary_data(self, path, add_new=False, delimiter='\t'):
+    def read_summary_data(self, path, add_new=False, delimiter='\t', span_scale=1):
         """Read in summary data (not timecourse data) for each worm.
 
         Summary statistics are read from columns in a delimited text file and
@@ -346,6 +448,9 @@ class Worms(collections.UserList):
                 does not match any existing worm names, create a new worm and
                 add it to this Worms list. If False, print a warning and ignore.
             delimiter: delimiter for input data file.
+            span_scale: if any data column name ends with 'span', the value will
+                be multiplied by span_scale. (Useful e.g. for converting hours
+                into days.)
         """
         named_worms = {worm.name: worm for worm in self}
         header, data = datafile.read_delimited(path, delimiter=delimiter)
@@ -361,6 +466,8 @@ class Worms(collections.UserList):
             else:
                 worm = named_worms[name]
             for feature, val in zip(header[1:], rest):
+                if feature.endswith('span'):
+                    val *= span_scale
                 setattr(worm, feature, val)
 
     def write_summary_data(self, path, features=None, delimiter='\t', error_on_missing=True):
@@ -434,7 +541,7 @@ class Worms(collections.UserList):
         """
         path = pathlib.Path(path)
         if not multi_worm_file:
-            path.mkdir(parents=False, exist_ok=False)
+            path.mkdir(parents=False, exist_ok=True)
             if suffix is None:
                 if delimiter == ',':
                     suffix = '.csv'
@@ -475,12 +582,12 @@ class Worms(collections.UserList):
                     row.insert(0, worm.name)
                 data.extend(rows)
             else:
-                worm_path = (path / worm.name).with_suffix(suffix)
+                worm_path = path / (worm.name + suffix)
                 datafile.write_delimited(worm_path, [features] + rows, delimiter)
         if multi_worm_file:
             datafile.write_delimited(path, data, delimiter)
 
-    def merge_in(self, other_worms):
+    def merge_in(self, other_worms, add_new=False):
         """Merge timecourse and summary data from a second Worms list.
 
         This function is useful if you have several different text files
@@ -492,9 +599,11 @@ class Worms(collections.UserList):
         lists together.
 
         Worms will be merged by matching the worm.name attribute. Worms in the
-        other_worms list that do not match will be ignored (and a warning will
-        be printed). If both matching worms have the same timecourse or summary
-        features, those features are checked to make sure they're equal.
+        other_worms list that do not match can be added or ignored (with awarning
+        printed), depending on the add_new parameter.
+
+        If both matching worms have the same timecourse or summary features,
+        those features are checked to make sure they're equal.
 
         Example:
             worms = read_worms('basic_measures/*.csv')
@@ -504,7 +613,10 @@ class Worms(collections.UserList):
         named_worms = {worm.name: worm for worm in self}
         for other_worm in other_worms:
             if other_worm.name not in named_worms:
-                print("no match found for", other_worm.name)
+                if add_new:
+                    self.append(other_worm)
+                else:
+                    print("no match found for", other_worm.name)
                 continue
             our_worm = named_worms[other_worm.name]
             # merge timecourse data
