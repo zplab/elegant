@@ -200,6 +200,17 @@ def write_annotation_file(annotation_file, position_annotations, timepoint_annot
         # convert from  OrderedDict or defaultdict or whatever to plain dict for output
         pickle.dump((dict(position_annotations), dict(timepoint_annotations)), af)
 
+def merge_annotations(positions, positions2):
+    """Merge two position dictionaries (as returned by e.g. read_annotations).
+
+    All annotations from 'positions2' will be merged in-place into 'positions'.
+    """
+    for position_name, (position_annotations2, timepoint_annotations2) in positions2.items():
+        position_annotations, timepoint_annotations = positions.setdefault(position_name, ({}, {}))
+        position_annotations.update(position_annotations2)
+        for timepoint, annotations2 in timepoint_annotations2.items():
+            timepoint_annotations.setdefault(timepoint, {}).update(annotations2)
+
 def filter_annotations(positions, position_filter):
     """Filter annotation dictionary for an experiment based on some criteria.
 
@@ -252,7 +263,7 @@ def filter_annotations(positions, position_filter):
         positions = read_annotations('/path/to/exp/root')
         new_positions = filter_annotations(positions, filter_excluded)
     """
-    selected_positions = OrderedDict()
+    selected_positions = collections.OrderedDict()
     for position_name, annotations in positions.items():
         position_annotations, timepoint_annotations = annotations
         include = position_filter(position_name, position_annotations, timepoint_annotations)
@@ -323,14 +334,13 @@ def annotate_timestamps(experiment_root):
     was acquired for that position.
     """
     experiment_root = pathlib.Path(experiment_root)
-    positions = read_annotations(experiment_root)
-    positions = collections.defaultdict(lambda: ({}, {}), positions)
+    positions = {}
     for metadata_path in sorted(experiment_root.glob('*/position_metadata.json')):
         with metadata_path.open('r') as f:
             position_metadata = json.load(f)
-        timepoints = [pm['timepoint'] for pm in position_metadata]
-        timestamps = [pm['timestamp'] for pm in position_metadata]
-        position_annotations, timepoint_annotations = positions[metadata_path.parent.name]
-        for timepoint, timestamp in zip(timepoints, experiment_ages):
-            timepoint_annotations.setdefault(timepoint, {}).update(timestamp=timestamp)
+        timepoint_annotations = {}
+        positions[metadata_path.parent.name] = {}, timepoint_annotations
+        for metadata in position_metadata:
+            timepoint_annotations[metadata['timepoint']] = {'timestamp': metadata['timestamp']}
+    merge_annotations(positions, read_annotations(experiment_root))
     write_annotations(experiment_root, positions)

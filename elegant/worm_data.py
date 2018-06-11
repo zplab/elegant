@@ -406,6 +406,87 @@ class Worm(object):
         ages, value = self.get_time_range(feature, age_feature=age_feature)
         return numpy.interp(age, ages, value)
 
+    def merge_with(self, other):
+        """Merge summary and timecourse data with another worm.
+
+        The other worm must have a matching name. If any data are in common
+        those data must match. Merging of timecourse data is supported in
+        all cases: when the timepoints completely or partially overlap, or are
+        disjoint.
+
+        Note: only handles int/float/string data types. Any int data types will
+        be converted to float in cases where timepoints do not fully overlap,
+        and missing values will be filled with nan. For string data, missing
+        values are represented by empty strings.
+        """
+        assert other.name == self.name
+        # first merge timecourse data
+        if set(self.td.timepoint) == set(other.td.timepoint):
+            # timepoints are the same; can merge trivially
+            for k, v in other.td._items():
+                if hasattr(self.td, k):
+                    # if both worms have the same named timecourse information, make sure it matches
+                    assert numpy.all(v == getattr(self.td, k))
+                else:
+                    setattr(self.td, k, v)
+        else:
+            # timepoints are different, need to merge in more complex fashion
+            self._unify_timecourses(other)
+        # now merge summary data
+        for k, v in other.__dict__.items():
+            if k == 'td':
+                continue
+            if hasattr(self, k):
+                assert numpy.all(v == getattr(self, k))
+            else:
+                setattr(our_worm, k, v)
+
+    def _unify_timecourses(self, other):
+        new_timepoints = numpy.unique(numpy.concatenate([self.td.timepoint, other.td.timepoint]))
+        len_new = len(new_timepoints)
+        our_mask = numpy.in1d(new_timepoints, self.td.timepoint, assume_unique=True)
+        other_mask = numpy.in1d(new_timepoints, other.td.timepoint, assume_unique=True)
+        # the following holds:
+        # assert (new_timepoints[our_mask] == self.td.timepoint).all()
+        # assert (new_timepoints[other_mask] == other.td.timepoint).all()
+        our_features = set(self.td._keys())
+        our_features.remove('timepoint')
+        other_features = set(other.td._keys())
+        other_features.remove('timepoint')
+        ours_only = our_features - other_features
+        other_only = other_features - our_features
+        both = our_features.intersection(other_features)
+        for feature in ours_only:
+            self._convert_values(self.td, feature, len_new, our_mask)
+        for feature in other_only:
+            self._convert_values(other.td, feature, len_new, other_mask)
+        if len(both) > 0:
+            ours_in_other = numpy.in1d(self.td.timepoint, other.td.timepoint, assume_unique=True)
+            other_in_ours = numpy.in1d(other.td.timepoint, self.td.timepoint, assume_unique=True)
+            for feature in both:
+                our_v = getattr(self.td, feature)
+                other_v = getattr(other.td, feature)
+                if not numpy.all(our_v[ours_in_other] == other_v[other_in_ours]):
+                    raise ValueError(f'worms to be merged have different values of {feature} for some timepoints that are in common')
+                new_values = numpy.empty(len_new, dtype=numpy.promote_types(our_v.dtype, other_v.dtype))
+                new_values[our_mask] = our_v
+                new_values[other_mask] = other_v
+                setattr(self.td, feature, new_values)
+        self.td.timepoint = new_timepoints
+
+    def _convert_values(self, src_td, feature, len_new, mask):
+        values = getattr(src_td, feature)
+        if values.dtype.kind in 'SU': # string dtype
+            dtype = values.dtype
+        else:
+            dtype = float
+        new_values = numpy.empty(len_new, dtype=dtype)
+        new_values[mask] = values
+        if dtype is float:
+            new_values[~mask] = numpy.nan
+        setattr(self.td, feature, new_values)
+
+
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
 
@@ -568,10 +649,17 @@ class Worms(collections.UserList):
             missing = [''] * n
             cols = []
             for feature in features:
-                if feature not in worm.td.__dict__ and error_on_missing:
-                    raise ValueError(f'Worm "{worm.name}" has no "{feature}" feature.')
+                if feature not in worm.td.__dict__:
+                    if error_on_missing:
+                        raise ValueError(f'Worm "{worm.name}" has no "{feature}" feature.')
+                    else:
+                        vals = missing
                 else:
-                    cols.append(getattr(worm.td, feature, missing))
+                    vals = getattr(worm.td, feature)
+                    if vals.dtype == float:
+                        good = ~numpy.isnan(vals)
+                        vals = [str(v) if g else '' for v, g in zip(vals, good)]
+                cols.append(vals)
             assert all(len(c) == n for c in cols)
             rows = [[] for _ in range(n)]
             for col in cols:
@@ -618,22 +706,7 @@ class Worms(collections.UserList):
                 else:
                     print("no match found for", other_worm.name)
                 continue
-            our_worm = named_worms[other_worm.name]
-            # merge timecourse data
-            for k, v in other_worm.td.__dict__.items():
-                if hasattr(our_worm.td, k):
-                    # if both worms have the same named timecourse information, make sure it matches
-                    assert numpy.all(v == getattr(our_worm.td, k))
-                else:
-                    setattr(our_worm.td, k, v)
-            # merge summary data
-            for k, v in other_worm.__dict__.items():
-                if k == 'td':
-                    pass
-                if hasattr(our_worm, k):
-                    assert numpy.all(v == getattr(our_worm, k))
-                else:
-                    setattr(our_worm, k, v)
+            named_worms[other_worm.name].merge_with(other_worm)
 
     def sort(self, feature, reverse=False):
         """Sort Worms list in place, according to a summary feature value.
@@ -1001,3 +1074,8 @@ class _TimecourseData(object):
     def __repr__(self):
         return 'Timecourse Data:\n' + '\n'.join('    ' + k for k in sorted(self.__dict__) if not k.startswith('_'))
 
+    def _items(self):
+        return self.__dict__.items()
+
+    def _keys(self):
+        return self.__dict__.keys()

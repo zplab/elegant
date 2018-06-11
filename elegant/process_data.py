@@ -62,7 +62,7 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
                 annotations: annotation dict for this position at the given
                     timepoint
             and the return value must be a list of measurements of the same
-            length as the feature_names attribute, or None if that measurement
+            length as the feature_names attribute, or nan if that measurement
             cannot be made on the given worm and timepoint (e.g. missing data).
             If a measurement produces no data (e.g. it only produces file output,
             such as segmentation masks), then feature_names may be None, and
@@ -74,15 +74,16 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
             parts and run the measurements in parallel via the multiprocessing
             library.
 
-        Below is an example of performing some measurements on all worms and
-        others on only a subset. (In practice, however, it generally makes more
-        sense to apply all measures to all data. A properly-written measurement
-        function will return None when the required data is missing, producing
-        .tsv files with lots of blank spaces. This is just fine and is simpler.)
+    Below is an example of performing some measurements on all worms and others
+    on only a subset. (In practice, however, it generally makes more sense to
+    apply all measures to all data. A properly-written measurement function
+    will return None when the required data is missing, producing .tsv files
+    with lots of blank spaces. This is just fine and is simpler.)
 
     positions = load_data.read_annotations('path/to/experiment')
     to_measure = load_data.filter_annotations(positions, load_data.filter_living_timepoints)
-    measure_worms(experiment_root, to_measure, [BasicMeasurements, PoseMeasurements], 'core_measures')
+    measures = [BasicMeasurements(), PoseMeasurements(microns_per_pixel=5)]
+    measure_worms(experiment_root, to_measure, measures, 'core_measures')
     def filter_adult(position_name, position_annotations, timepoint_annotations):
         return [tp['stage'] == 'adult' for tp in timepoint_annotations.values()]
     adult_timepoints = load_data.filter_annotations(positions, filter_adult)
@@ -103,15 +104,16 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
         position_root = experiment_root / position_name
         timepoint_data = []
         for timepoint, annotations in timepoint_annotations.items():
-            timepoint_data.append(timepoint)
+            timepoint_features = [timepoint]
+            timepoint_data.append(timepoint_features)
             for measure in measures:
                 features = measure.measure(position_root, derived_root, timepoint, annotations)
                 if features is None:
                     assert measure.feature_names is None
                 else:
                     assert len(features) == len(measure.feature_names)
-                    timepoint_data.append(features)
-        data.append(position_name, timepoint_data)
+                    timepoint_features.extend(features)
+        data.append((position_name, timepoint_data))
     if len(feature_names) > 1: # more than just the timepoint column in the data
         data_root = derived_root / 'measurements' / measurement_name
         data_root.mkdir(parents=True, exist_ok=True)
@@ -150,7 +152,7 @@ def collate_data(experiment_root):
     for measurement_dir in measurement_root.iterdir():
         files = list(measurement_dir.glob('*.tsv'))
         if len(files) > 0:
-            measurements.append(worm_data.read_worms(*files, name_prefix=experiment_name, calculate_lifespan=False))
+            measurements.append(worm_data.read_worms(*files, name_prefix=experiment_name+' ', calculate_lifespan=False))
     worms = measurements[0]
     for other_measurement in measurements[1:]:
         worms.merge_in(other_measurement)
@@ -172,14 +174,9 @@ class BasicMeasurements:
 
     This data is required to calculate lifespans and other spans, and should be
     considered the minimum set of useful information about each worm.
-
-    Note: this class does not need to be instantiated to be used as a measurement,
-    because the measure function is a static method.
     """
     feature_names = ['timestamp', 'stage']
-
-    @staticmethod
-    def measure(position_root, derived_root, timepoint, annotations):
+    def measure(self, position_root, derived_root, timepoint, annotations):
         return annotations['timestamp'], annotations['stage']
 
 class PoseMeasurements:
@@ -191,8 +188,8 @@ class PoseMeasurements:
 
     If no pose annotation is present, Nones are returned.
 
-    Note: this class must be instantiated to be used as a measurement, with the
-    correct microns_per_pixel conversion factor passed to the constructor.
+    Note: the correct microns_per_pixel conversion factor passed to the
+    constructor of this class.
     """
     feature_names = ['length', 'volume', 'surface_area', 'projected_area', 'max_width']
 
@@ -202,10 +199,10 @@ class PoseMeasurements:
     def measure(self, position_root, derived_root, timepoint, annotations):
         center_tck, width_tck = annotations.get('pose', (None, None))
         if center_tck is None:
-            return [None] * len(feature_names)
+            return [numpy.nan] * len(self.feature_names)
         elif width_tck is None:
             length = spline_geometry.arc_length(center_tck) * self.microns_per_pixel
-            return [length] + [None] * (len(feature_names) - 1)
+            return [length] + [numpy.nan] * (len(feature_names) - 1)
         else:
             projected_area = spline_geometry.area(center_tck, width_tck) * self.microns_per_pixel**2
             volume, surface_area = spline_geometry.volume_and_surface_area(center_tck, width_tck)
@@ -252,7 +249,7 @@ class FluorMeasurements:
     def measure(self, position_root, derived_root, timepoint, annotations):
         image_file = position_root / f'{timepoint} {self.image_type}.png'
         if not image_file.exists():
-            return [None] * len(self.feature_names)
+            return [numpy.nan] * len(self.feature_names)
 
         image = freeimage.read(image_file)
         flatfield = freeimage.read(position_root.parent / 'calibrations' / f'{timepoint} fl_flatfield.tiff')
@@ -263,7 +260,7 @@ class FluorMeasurements:
                 print(f'No pose data found for {position_root.name} at {timepoint}; falling back to mask file.')
             else:
                 print(f'No mask file or pose data found for {position_root.name} at {timepoint}.')
-                return [None] * len(self.feature_names)
+                return [numpy.nan] * len(self.feature_names)
             mask = freeimage.read(mask_file)
         else:
             # NB: it's WAY faster to regenerate the mask from the splines than to read it in,
@@ -280,6 +277,3 @@ class FluorMeasurements:
             out_dir.mkdir(parents=True, exist_ok=True)
             freeimage.write(color, out_dir / f'{timepoint} {self.image_type}.png')
         return data
-
-
-
