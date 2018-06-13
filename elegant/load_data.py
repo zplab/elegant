@@ -278,7 +278,7 @@ def filter_annotations(positions, position_filter):
 
 def filter_excluded(position_name, position_annotations, timepoint_annotations):
     """Filter-function for filter_annotations() to return non-excluded worms."""
-    return position_annotations.get('exclude', True) # if not present, assume not excluded
+    return not position_annotations.get('exclude', False) # if not present, assume not excluded
 
 def filter_staged(position_name, position_annotations, timepoint_annotations):
     """Filter-function for filter_annotations() to return worms that have been
