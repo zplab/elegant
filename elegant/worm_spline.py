@@ -112,7 +112,7 @@ def _get_splines(centerline, widths):
     center_tck = interpolate.fit_spline(numpy.concatenate([begin, centerline, end]),
         smoothing=0.2*len(centerline))
 
-     = numpy.concatenate([begin_widths, widths, end_widths])
+    new_widths = numpy.concatenate([begin_widths, widths, end_widths])
     x = numpy.linspace(0, 1, len(y))
     width_tck = interpolate.fit_nonparametric_spline(x, new_widths, smoothing=0.2*len(centerline))
     return center_tck, width_tck
