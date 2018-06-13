@@ -7,7 +7,8 @@ from PyQt5 import Qt
 import numpy
 
 from ris_widget.qwidgets import annotator
-from ris_widget.overlay import spline_outline
+
+from .spline_overlay import spline_outline
 
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True

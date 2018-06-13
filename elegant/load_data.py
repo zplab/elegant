@@ -3,7 +3,6 @@
 import collections
 import pathlib
 import pickle
-import json
 
 def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, image_ext='png'):
     """Read files from a 'worm corral' experiment for further processing or analysis.
@@ -205,8 +204,8 @@ def merge_annotations(positions, positions2):
 
     All annotations from 'positions2' will be merged in-place into 'positions'.
     """
-    for position_name, (position_annotations2, timepoint_annotations2) in positions2.items():
-        position_annotations, timepoint_annotations = positions.setdefault(position_name, ({}, {}))
+    for position, (position_annotations2, timepoint_annotations2) in positions2.items():
+        position_annotations, timepoint_annotations = positions.setdefault(position, ({}, {}))
         position_annotations.update(position_annotations2)
         for timepoint, annotations2 in timepoint_annotations2.items():
             timepoint_annotations.setdefault(timepoint, {}).update(annotations2)
@@ -323,24 +322,3 @@ def filter_living_timepoints(position_name, position_annotations, timepoint_anno
             keep = True
         good_times.append(keep)
     return good_times
-
-def annotate_timestamps(experiment_root):
-    """Add timestamp data to the annotation file for each position in an experiment.
-
-    For each position, a "t0" annotation field is added, containing the timestamp
-    at which the first image for that position was acquired.
-    For each timepoint within a given position, an "experiment_age" annotation
-    field is added, containing the number of hours elapsed after the first image
-    was acquired for that position.
-    """
-    experiment_root = pathlib.Path(experiment_root)
-    positions = {}
-    for metadata_path in sorted(experiment_root.glob('*/position_metadata.json')):
-        with metadata_path.open('r') as f:
-            position_metadata = json.load(f)
-        timepoint_annotations = {}
-        positions[metadata_path.parent.name] = {}, timepoint_annotations
-        for metadata in position_metadata:
-            timepoint_annotations[metadata['timepoint']] = {'timestamp': metadata['timestamp']}
-    merge_annotations(positions, read_annotations(experiment_root))
-    write_annotations(experiment_root, positions)

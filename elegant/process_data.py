@@ -3,17 +3,75 @@
 import pathlib
 import itertools
 import multiprocessing
+import json
 import numpy
+import collections
 
 from zplib.curve import spline_geometry
 import freeimage
 
 from . import worm_data
 from . import load_data
-from . import spline_mask
+from . import worm_spline
 from . import measure_fluor
 
 DERIVED_ROOT = 'derived_data'
+
+
+def update_annotations(experiment_root):
+    """Run prior to manually annotating an experiment directory, in order to
+    update the annotations dictionaries with all relevant data that can be
+    automatically extracted.
+    """
+    annotate(experiment_root, [timestamp_annotator, pose_from_mask_annotator])
+
+
+def annotate(experiment_root, measures):
+    """Apply one or more measurement functions to produce annotations for manual review.
+
+    Parameters:
+        experiment_root: the path to an experimental directory.
+        measures: list of measurement functions to apply to each timepoint. Each
+            will be called as:
+                measure(experiment_root, position, timepoint, metadata, annotations)
+            where:
+                experiment_root: as above
+                positions: name of position
+                timepoint: name of timepoint
+                metadata: metadata dict for the timepoint from 'position_metadata.json'
+                annotations: annotation dictionary for the timepoint
+            The function should add anything relevant to the annotations dictionary;
+            and the function may use the contents of that dictionary to decide
+            whether to overwrite existing annotations with new ones or not.
+            The return value of the measure function is ignored.
+    """
+    experiment_root = pathlib.Path(experiment_root)
+    positions = load_data.read_annotations(experiment_root)
+    for metadata_path in sorted(experiment_root.glob('*/position_metadata.json')):
+        with metadata_path.open('r') as f:
+            position_metadata = json.load(f)
+        position = metadata_path.parent.name
+        position_annotations, timepoint_annotations = positions.setdefault(position, ({}, {}))
+        for metadata in position_metadata:
+            timepoint = metadata['timepoint']
+            annotations = timepoint_annotations.setdefault(timepoint, {})
+            for measure in measures:
+                measure(experiment_root, position, timepoint, metadata, annotations)
+    load_data.write_annotations(experiment_root, positions)
+
+
+def timestamp_annotator(experiment_root, position, timepoint, metadata, annotations):
+    annotations['timestamp'] = metadata['timestamp']
+
+
+def pose_from_mask_annotator(experiment_root, position, timepoint, metadata, annotations):
+    mask_path = experiment_root / DERIVED_ROOT / 'masks' / position / f'{timepoint}.png'
+    if mask_path.exists():
+        center_tck, width_tck = annotations.get('pose', (None, None))
+        if center_tck is None:
+            mask = freeimage.read(mask_path) > 0
+            annotations['pose'] = worm_spline.pose_from_mask(mask)
+
 
 def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs=1):
     """Apply one or more measurement functions to all or some worms in an experiment.
@@ -122,12 +180,14 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
             worms.append(worm_data.Worm(position_name, feature_names, timepoint_data))
         worms.write_timecourse_data(data_root, multi_worm_file=False)
 
+
 def _multiprocess_measure(experiment_root, positions, measures, measurement_name, n_jobs):
     job_position_names = numpy.array_split(list(positions.keys()), n_jobs)
     job_positions = [{name:positions[name] for name in names} for names in job_position_names]
     job_args = [(experiment_root, job_pos, measures, measurement_name) for job_pos in job_positions]
     with multiprocessing.Pool(processes=n_jobs) as pool:
         pool.starmap(measure_worms, job_args)
+
 
 def collate_data(experiment_root):
     """Gather all .tsv files produced by measurement runs into a single file.
@@ -164,6 +224,7 @@ def collate_data(experiment_root):
     worms.write_timecourse_data(derived_root / f'{experiment_name} timecourse.tsv', multi_worm_file=True, error_on_missing=False)
     worms.write_summary_data(derived_root / f'{experiment_name} summary.tsv', error_on_missing=False)
 
+
 class BasicMeasurements:
     """Provide data columns for the timepoint's UNIX timestamp and the annotated stage.
 
@@ -178,6 +239,7 @@ class BasicMeasurements:
     feature_names = ['timestamp', 'stage']
     def measure(self, position_root, derived_root, timepoint, annotations):
         return annotations['timestamp'], annotations['stage']
+
 
 class PoseMeasurements:
     """Provide data columns based on annotated worm pose information.
@@ -213,6 +275,7 @@ class PoseMeasurements:
             max_width *= 2 * self.microns_per_pixel # the "width_tck" is really more like a radius,
             # storing the distance from the centerline to the edge. Double it to generate a real width.
             return [length, volume, surface_area, projected_area, max_width]
+
 
 class FluorMeasurements:
     """Provide data columns based on a fluorescent images.
@@ -265,7 +328,7 @@ class FluorMeasurements:
         else:
             # NB: it's WAY faster to regenerate the mask from the splines than to read it in,
             # even if the file is cached in RAM. Strange but true.
-            mask = spline_mask.lab_frame_mask(center_tck, width_tck, image.shape)
+            mask = worm_spline.lab_frame_mask(center_tck, width_tck, image.shape)
 
         mask = mask > 0
         image = image.astype(numpy.float32) * flatfield
