@@ -23,17 +23,16 @@ def update_annotations(experiment_root):
     update the annotations dictionaries with all relevant data that can be
     automatically extracted.
     """
-    annotate(experiment_root, [timestamp_annotator, pose_from_mask_annotator])
+    annotate(experiment_root, [TimestampAnnotator(), PoseFromMaskAnnotator()])
 
-
-def annotate(experiment_root, measures):
+def annotate(experiment_root, annotators):
     """Apply one or more measurement functions to produce annotations for manual review.
 
     Parameters:
         experiment_root: the path to an experimental directory.
-        measures: list of measurement functions to apply to each timepoint. Each
+        annotators: list of annotation instances to apply to each timepoint. Each
             will be called as:
-                measure(experiment_root, position, timepoint, metadata, annotations)
+                annotator.annotate(experiment_root, position, timepoint, metadata, annotations)
             where:
                 experiment_root: as above
                 positions: name of position
@@ -55,22 +54,27 @@ def annotate(experiment_root, measures):
         for metadata in position_metadata:
             timepoint = metadata['timepoint']
             annotations = timepoint_annotations.setdefault(timepoint, {})
-            for measure in measures:
-                measure(experiment_root, position, timepoint, metadata, annotations)
+            for annotator in annotators:
+                annotator.annotate(experiment_root, position, timepoint, metadata, annotations)
     load_data.write_annotations(experiment_root, positions)
 
+class TimestampAnnotator:
+    def annotate(self, experiment_root, position, timepoint, metadata, annotations):
+        annotations['timestamp'] = metadata['timestamp']
 
-def timestamp_annotator(experiment_root, position, timepoint, metadata, annotations):
-    annotations['timestamp'] = metadata['timestamp']
+class PoseFromMaskAnnotator:
+    def __init__(self, mask_name='bf', dest_annotation='pose'):
+        self.mask_name = mask_name
+        self.dest_annotation = dest_annotation
 
+    def annotate(self, experiment_root, position, timepoint, metadata, annotations):
+        mask_path = experiment_root / DERIVED_ROOT / 'masks' / position / f'{timepoint} {self.mask_name}.png'
+        if mask_path.exists():
+            center_tck, width_tck = annotations.get('pose', (None, None))
+            if center_tck is None:
+                mask = freeimage.read(mask_path) > 0
+                annotations[self.dest_annotation] = worm_spline.pose_from_mask(mask)
 
-def pose_from_mask_annotator(experiment_root, position, timepoint, metadata, annotations):
-    mask_path = experiment_root / DERIVED_ROOT / 'masks' / position / f'{timepoint}.png'
-    if mask_path.exists():
-        center_tck, width_tck = annotations.get('pose', (None, None))
-        if center_tck is None:
-            mask = freeimage.read(mask_path) > 0
-            annotations['pose'] = worm_spline.pose_from_mask(mask)
 
 
 def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs=1):
@@ -180,14 +184,12 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
             worms.append(worm_data.Worm(position_name, feature_names, timepoint_data))
         worms.write_timecourse_data(data_root, multi_worm_file=False)
 
-
 def _multiprocess_measure(experiment_root, positions, measures, measurement_name, n_jobs):
     job_position_names = numpy.array_split(list(positions.keys()), n_jobs)
     job_positions = [{name:positions[name] for name in names} for names in job_position_names]
     job_args = [(experiment_root, job_pos, measures, measurement_name) for job_pos in job_positions]
     with multiprocessing.Pool(processes=n_jobs) as pool:
         pool.starmap(measure_worms, job_args)
-
 
 def collate_data(experiment_root):
     """Gather all .tsv files produced by measurement runs into a single file.
@@ -224,7 +226,6 @@ def collate_data(experiment_root):
     worms.write_timecourse_data(derived_root / f'{experiment_name} timecourse.tsv', multi_worm_file=True, error_on_missing=False)
     worms.write_summary_data(derived_root / f'{experiment_name} summary.tsv', error_on_missing=False)
 
-
 class BasicMeasurements:
     """Provide data columns for the timepoint's UNIX timestamp and the annotated stage.
 
@@ -239,7 +240,6 @@ class BasicMeasurements:
     feature_names = ['timestamp', 'stage']
     def measure(self, position_root, derived_root, timepoint, annotations):
         return annotations['timestamp'], annotations['stage']
-
 
 class PoseMeasurements:
     """Provide data columns based on annotated worm pose information.
@@ -276,7 +276,6 @@ class PoseMeasurements:
             # storing the distance from the centerline to the edge. Double it to generate a real width.
             return [length, volume, surface_area, projected_area, max_width]
 
-
 class FluorMeasurements:
     """Provide data columns based on a fluorescent images.
 
@@ -286,23 +285,30 @@ class FluorMeasurements:
 
     If the image required can't be found or there is no pose data and no mask
     file, Nones are returned for the measurement data.
-    NB: mask files are expected to be organized as follows:
-    {experiment_root}/derived_data/masks/{position_name}/{timepoint}.png
-    However, pose data is preferred.
+    However, pose data is preferred, and will be
+    looked up from the annotation dictionary with the provided annotation name
+    ('pose' by default).
 
     Note: this class must be instantiated to be used as a measurement. The
     constructor takes the following parameters:
         image_type: the name of the images to load, e.g. 'gfp' or 'autofluorescence'.
             Images files will be loaded as:
             {experiment_root}/{position_name}/{timepoint} {image_type}.png
+        pose_annotation: name of the annotation that the pose for this image,
+            'pose' by defauly.
+        mask_name: name of the mask file to read if no pose is found; 'bf' by
+            default. Mask files are expected to be organized as follows:
+            {experiment_root}/derived_data/masks/{position_name}/{timepoint} {mask_name}.png
         write_masks: if True (default is False), write out a colorized
             representation of the expression, high_expression and over_99
             regions as:
             {experiment_root}/derived_data/fluor_region_masks/{position_name}/{timepoint} {image_type}.png
     """
 
-    def __init__(self, image_type, write_masks=False):
+    def __init__(self, image_type, pose_annotation='pose', mask_name='bf', write_masks=False):
         self.image_type = image_type
+        self.pose_annotation = pose_annotation
+        self.mask_name = mask_name
         self.write_masks = write_masks
 
     @property
@@ -316,9 +322,9 @@ class FluorMeasurements:
 
         image = freeimage.read(image_file)
         flatfield = freeimage.read(position_root.parent / 'calibrations' / f'{timepoint} fl_flatfield.tiff')
-        center_tck, width_tck = annotations.get('pose', (None, None))
+        center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
         if center_tck is None or width_tck is None:
-            mask_file = derived_root / 'masks' / position_root.name / f'{timepoint}.png'
+            mask_file = derived_root / 'masks' / position_root.name / f'{timepoint} {mask_name}.png'
             if mask_file.exists():
                 print(f'No pose data found for {position_root.name} at {timepoint}; falling back to mask file.')
             else:
