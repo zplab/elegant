@@ -252,6 +252,10 @@ def longitudinal_warp_spline(t_in, t_out, center_tck, width_tck=None):
             landmark position would be 0.5. Landmarks for head and tail at 0 and
             1 are automatically added: do not include! List must be in sorted
             order and monotonic.
+            To convert from a pixel position along a straightened image into a
+            value in (0, 1), simply divide the position by the arc length of the
+            spline, which can be calculated by:
+                zplib.curve.spline_geometry.arc_length(center_tck)
         t_out: list / array matching t_in, defining the positions of those
             landmarks in the output spline.
         center_tck: input centerline spline. Note: the spline must be close to
@@ -426,8 +430,7 @@ def worm_frame_mask(width_tck, image_shape, num_spline_points=None, antialias=Fa
     top = numpy.transpose([x_vals, centerline_y - widths])
     bottom = numpy.transpose([x_vals, centerline_y + widths])[::-1]
     path = celiagg.Path()
-    path.lines(top)
-    path.lines(bottom)
+    path.lines(numpy.concatenate([top, bottom]))
     return _celiagg_draw_mask(image_shape, path, antialias)
 
 
