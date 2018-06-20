@@ -1,6 +1,5 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
-
 from PyQt5 import Qt
 import numpy
 from zplib.image import colorize

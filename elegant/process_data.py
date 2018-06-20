@@ -323,7 +323,7 @@ class FluorMeasurements:
             'pose' by defauly.
         mask_name: name of the mask file to read if no pose is found; 'bf' by
             default. Mask files are expected to be organized as follows:
-            {experiment_root}/derived_data/masks/{position_name}/{timepoint} {mask_name}.png
+            {experiment_root}/derived_data/mask/{position_name}/{timepoint} {mask_name}.png
         write_masks: if True (default is False), write out a colorized
             representation of the expression, high_expression and over_99
             regions as:

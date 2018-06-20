@@ -79,6 +79,11 @@ def compose_image(ris_widget, roi=None, downsample_factor=None, fast_downsample=
     taken from the ris_widget layers. The images can be taken from ris_widget
     as well (default) or provided separately.
 
+    To scale a single image from uint16 to uint8 using the current ris_widget
+    min/max/gamma, this function is overkill. For that, one merely needs to run:
+        scaled = zplib.image.colorize.scale(image, ris_widget.layer.min,
+            ris_widget.layer.max, ris_widget.layer.gamma, output_max=255).astype(numpy.uint8)
+
     Parameters:
         ris_widget: a ris_widget instance.
         roi: a RectROI instance (e.g. provided by the add_roi() convenience

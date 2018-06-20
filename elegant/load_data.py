@@ -305,13 +305,14 @@ def filter_living_timepoints(position_name, position_annotations, timepoint_anno
     which have been completely annotated with life stages; of these, all timepoints
     annotated as "egg" or "dead", except the last "egg" and first "dead" will be
     excluded. (The non-excluded "egg" and "dead" allow us to define the hatch and
-    death times more carefully.)"""
+    death times more carefully.) Any timepoints which have been annotated "exclude"
+    will also be excluded."""
     if not filter_excluded(position_name, position_annotations, timepoint_annotations):
         return False
     stages = [tp.get('stage') for tp in timepoint_annotations.values()]
     if not all(stages) or stages[-1] != 'dead':
         return False
-    good_times = []
+    good_stages = []
     n = len(stages)
     for i, stage in enumerate(stages):
         if stage == 'egg':
@@ -320,5 +321,7 @@ def filter_living_timepoints(position_name, position_annotations, timepoint_anno
             keep = i > 0 and stages[i-1] != 'dead'
         else:
             keep = True
-        good_times.append(keep)
-    return good_times
+        good_stages.append(keep)
+    excludes = [tp.get('exclude', False) for tp in timepoint_annotations.values()]
+    all_good = [good_stage and not exclude for good_stage, exclude in zip(good_stages, excludes)]
+    return all_good
