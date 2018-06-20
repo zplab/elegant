@@ -8,6 +8,7 @@ import numpy
 import collections
 
 from zplib.curve import spline_geometry
+from zplib.curve import interpolate
 import freeimage
 
 from . import worm_data
@@ -76,7 +77,6 @@ class PoseFromMaskAnnotator:
                 annotations[self.dest_annotation] = worm_spline.pose_from_mask(mask)
 
 
-
 def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs=1):
     """Apply one or more measurement functions to all or some worms in an experiment.
 
@@ -110,25 +110,29 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
             must (1) have an attribute 'feature_names' which is a list of the
             names of the measurement(s) it produces, and (2) have a 'measure'
             method that will be called as:
-                data = measure(position_root, derived_root, timepoint, annotations)
+                data = measure(position_root, timepoint, annotations, before, after)
             where the parameters are as follows:
                 position_root: path to directory of data files for the position
                     (i.e. experiment_root / position_name)
-                derived_root: path to directory where output of measurements is
-                    to be written. Meaasurement functions that produce files
-                    should write them into a subdirectory of derived_root named
-                    based on the measurement, organized as follows:
-                    '{derived_root}/{name}/{position_name}/{timepoint}.ext'
-                    where position_name can be obtained as position_root.name.
                 timepoint: name of the timepoint to be measured
                 annotations: annotation dict for this position at the given
                     timepoint
+                before, after: annotation dictionaries (or None) for the
+                    previous and next timepoints, if any. This enables
+                    measurements based on the changes between annotations.
             and the return value must be a list of measurements of the same
             length as the feature_names attribute, or nan if that measurement
             cannot be made on the given worm and timepoint (e.g. missing data).
             If a measurement produces no data (e.g. it only produces file output,
             such as segmentation masks), then feature_names may be None, and
             the return value of measure must also be None.
+            If a measurement wishes to write out data file(s), they should be
+            stored as:
+            '{experiment_root}/derived_data/{name}/{position_name}/{timepoint}.ext'
+            where 'name' is a unique name for this type of data, and
+            'position_name' can be obtained as position_root.name. If multiple
+            related datafiles need to be saved, they cound be saved as:
+            '{timepoint} {suffix}.ext' for whatever set of suffixes are needed.
         measurement_name: the name of this set of measurements. The .tsv files
             produced by this function (one for each position) will be written
             to '{experiment_root}/derived_data/measurements/{measurement_name}'
@@ -156,7 +160,6 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
         _multiprocess_measure(experiment_root, positions, measures, measurement_name, n_jobs)
         return
     experiment_root = pathlib.Path(experiment_root)
-    derived_root = experiment_root / DERIVED_ROOT
     feature_names = ['timepoint']
     for measure in measures:
         if measure.feature_names is not None:
@@ -165,11 +168,15 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
     for position_name, (position_annotations, timepoint_annotations) in positions.items():
         position_root = experiment_root / position_name
         timepoint_data = []
-        for timepoint, annotations in timepoint_annotations.items():
+        timepoints = sorted(timepoint_annotations.keys())
+        befores = [None] + [timepoint_annotations[t] for t in timepoints[:-1]]
+        afters = [timepoint_annotations[t] for t in timepoints[1:]] + [None]
+        for timepoint, before, after in zip(timepoints, befores, afters):
+            annotations = timepoint_annotations[timepoint]
             timepoint_features = [timepoint]
             timepoint_data.append(timepoint_features)
             for measure in measures:
-                features = measure.measure(position_root, derived_root, timepoint, annotations)
+                features = measure.measure(position_root, timepoint, annotations, before, after)
                 if features is None:
                     assert measure.feature_names is None
                 else:
@@ -177,7 +184,7 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
                     timepoint_features.extend(features)
         data.append((position_name, timepoint_data))
     if len(feature_names) > 1: # more than just the timepoint column in the data
-        data_root = derived_root / 'measurements' / measurement_name
+        data_root = experiment_root / DERIVED_ROOT / 'measurements' / measurement_name
         data_root.mkdir(parents=True, exist_ok=True)
         worms = worm_data.Worms()
         for position_name, timepoint_data in data:
@@ -238,7 +245,7 @@ class BasicMeasurements:
     considered the minimum set of useful information about each worm.
     """
     feature_names = ['timestamp', 'stage']
-    def measure(self, position_root, derived_root, timepoint, annotations):
+    def measure(self, position_root, timepoint, annotations, before, after):
         return annotations['timestamp'], annotations['stage']
 
 class PoseMeasurements:
@@ -253,28 +260,46 @@ class PoseMeasurements:
     Note: the correct microns_per_pixel conversion factor passed to the
     constructor of this class.
     """
-    feature_names = ['length', 'volume', 'surface_area', 'projected_area', 'max_width']
+    feature_names = ['length', 'volume', 'surface_area', 'projected_area', 'max_width', 'centroid_dist', 'rms_dist']
 
-    def __init__(self, microns_per_pixel):
+    def __init__(self, microns_per_pixel, pose_annotation='pose'):
         self.microns_per_pixel = microns_per_pixel
+        self.pose_annotation = pose_annotation
 
-    def measure(self, position_root, derived_root, timepoint, annotations):
-        center_tck, width_tck = annotations.get('pose', (None, None))
-        if center_tck is None:
-            return [numpy.nan] * len(self.feature_names)
-        elif width_tck is None:
-            length = spline_geometry.arc_length(center_tck) * self.microns_per_pixel
-            return [length] + [numpy.nan] * (len(feature_names) - 1)
-        else:
-            projected_area = spline_geometry.area(center_tck, width_tck) * self.microns_per_pixel**2
-            volume, surface_area = spline_geometry.volume_and_surface_area(center_tck, width_tck)
-            volume *= self.microns_per_pixel**3
-            surface_area *= self.microns_per_pixel**2
-            length, max_width = spline_geometry.length_and_max_width(center_tck, width_tck)
-            length *= self.microns_per_pixel
-            max_width *= 2 * self.microns_per_pixel # the "width_tck" is really more like a radius,
-            # storing the distance from the centerline to the edge. Double it to generate a real width.
-            return [length, volume, surface_area, projected_area, max_width]
+
+    def measure(self, position_root, timepoint, annotations, before, after):
+        center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
+        measures = {}
+        if center_tck is not None:
+            if width_tck is None:
+                measures['length'] = spline_geometry.arc_length(center_tck) * self.microns_per_pixel
+             else:
+                measures['projected_area'] = spline_geometry.area(center_tck, width_tck) * self.microns_per_pixel**2
+                volume, surface_area = spline_geometry.volume_and_surface_area(center_tck, width_tck)
+                measures['volume'] = volume * self.microns_per_pixel**3
+                measures['surface_area'] = surface_area * self.microns_per_pixel**2
+                length, max_width = spline_geometry.length_and_max_width(center_tck, width_tck)
+                measures['length'] = length * self.microns_per_pixel
+                # the "width_tck" is really more like a radius,
+                # storing the distance from the centerline to the edge.
+                # Double it to generate a real width.
+                measures['max_width'] = max_width * 2 * self.microns_per_pixel
+            points = interpolate.spline_interpolate(center_tck, num_points=300)
+            centroid = points.mean(axis=0)
+            centroid_distances = []
+            rmsds = []
+            for adjacent in (before, after):
+                center_tck, width_tck = adjacent.get(self.pose_annotation, (None, None))
+                if center_tck is not None:
+                    adj_points = interpolate.spline_interpolate(center_tck, num_points=300)
+                    adj_centroid = adj_points.mean(axis=0)
+                    centroid_distances.append(numpy.linalg.norm(centroid - adj_centroid))
+                    squared_distances = ((points - adj_points)**2).sum(axis=1)
+                    rmsds.append(numpy.sqrt(numpy.mean(squared_distances)))
+            if len(rmsds) > 0:
+                measures['centroid_dist'] = numpy.mean(centroid_distances) * self.microns_per_pixel
+                measures['rms_dist'] = numpy.mean(rmsds) * self.microns_per_pixel
+        return [measures.get(feature, None) for feature in self.feature_names]
 
 class FluorMeasurements:
     """Provide data columns based on a fluorescent images.
@@ -315,7 +340,8 @@ class FluorMeasurements:
     def feature_names(self):
         return [f'{self.image_type}_{name}' for name in measure_fluor.SUBREGION_FEATURES]
 
-    def measure(self, position_root, derived_root, timepoint, annotations):
+    def measure(self, position_root, timepoint, annotations, before, after):
+        derived_root = position_root.parent / DERIVED_ROOT
         image_file = position_root / f'{timepoint} {self.image_type}.png'
         if not image_file.exists():
             return [numpy.nan] * len(self.feature_names)
@@ -324,7 +350,7 @@ class FluorMeasurements:
         flatfield = freeimage.read(position_root.parent / 'calibrations' / f'{timepoint} fl_flatfield.tiff')
         center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
         if center_tck is None or width_tck is None:
-            mask_file = derived_root / 'masks' / position_root.name / f'{timepoint} {mask_name}.png'
+            mask_file = derived_root / 'mask' / position_root.name / f'{timepoint} {mask_name}.png'
             if mask_file.exists():
                 print(f'No pose data found for {position_root.name} at {timepoint}; falling back to mask file.')
             else:
