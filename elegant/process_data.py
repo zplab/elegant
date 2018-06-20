@@ -68,7 +68,7 @@ class PoseFromMaskAnnotator:
         self.dest_annotation = dest_annotation
 
     def annotate(self, experiment_root, position, timepoint, metadata, annotations):
-        mask_path = experiment_root / DERIVED_ROOT / 'masks' / position / f'{timepoint} {self.mask_name}.png'
+        mask_path = experiment_root / DERIVED_ROOT / 'mask' / position / f'{timepoint} {self.mask_name}.png'
         if mask_path.exists():
             center_tck, width_tck = annotations.get('pose', (None, None))
             if center_tck is None:
