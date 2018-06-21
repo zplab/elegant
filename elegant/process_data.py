@@ -273,7 +273,7 @@ class PoseMeasurements:
         if center_tck is not None:
             if width_tck is None:
                 measures['length'] = spline_geometry.arc_length(center_tck) * self.microns_per_pixel
-             else:
+            else:
                 measures['projected_area'] = spline_geometry.area(center_tck, width_tck) * self.microns_per_pixel**2
                 volume, surface_area = spline_geometry.volume_and_surface_area(center_tck, width_tck)
                 measures['volume'] = volume * self.microns_per_pixel**3
