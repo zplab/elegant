@@ -168,12 +168,12 @@ def meta_worms(grouped_worms, *features, age_feature='age', summary_features=('l
             a feature name.
         summary_features: names of summary feature to average across each of the
             underlying worms.
-        smooth: smoothing parameter passed to LOWESS moving_mean function.
-            Represents the fraction of input data points that will be smoothed
-            across at each output data point.
         min_age, max_age: the beginning and end of the window to analyze.
             If not specified, features from the very beginning and/or to the
             very end of the timecourse will be retrieved.
+        smooth: smoothing parameter passed to LOWESS moving_mean function.
+            Represents the fraction of input data points that will be smoothed
+            across at each output data point.
 
     Returns:
         Worms object, sorted by group name.
@@ -898,6 +898,78 @@ class Worms(collections.UserList):
             data = data[mask]
             ages = ages[mask]
         return ages, data
+
+    def z_transform(self, feature, feature_out=None, recenter_only=False,
+            min_age=-numpy.inf, max_age=numpy.inf, age_feature='age',
+            match_closest=False, filter_valid=True, points_out=300, smooth=0.4):
+        """Produce a z-score from timecourse data.
+
+        Create a new timecourse feature that is a worm's z-score relative to the
+        population, with respect to a given feature. LOWESS regression is used
+        to estimate the population's moving mean and standard deviation. Then,
+        each individual's z-scores are calculated relative to that mean/std.
+
+        Parameters:
+            feature: the name of a timecourse feature available in worm.td to
+                retrieve (such as "gfp_95th", say), or a function that will be
+                called as feature(worm) that will calculate a timecourse feature
+                (see examples in Worm.get_time_range).
+            feature_out: the timecourse feature name to store the resulting z
+                scores as. If None, use '{feature}_z', assuming 'feature' is a
+                string name.
+            recenter_only: instead of z-transforming (data-mean)/std, just
+                recenter the data by subtrating the mean.
+            min_age, max_age: the beginning and end of the window in which to
+                retrieve features. If not specified, features from the very
+                beginning and/or to the very end of the timecourse will be
+                retrieved.
+            age_feature: the name of the feature to use to determine the age
+                window. Defaults to 'age', but other monotonic features, such as
+                a time-left-alive 'ghost_age' could also be used. If this is a
+                function, it will be called as age_feature(worm) to generate
+                the ages to examine (see examples).
+            match_closest: If False (default), the age window is strictly
+                defined as age <= max_age and >= min_age. However, if
+                match_closest is True, the window will begin at the nearest age
+                to min_age, and end at the nearest age to max_age.
+            filter_valid: If True (default), data with value nan, even in the age
+                range requested, will not be returned.
+            points_out: number of points to evaluate the mean and std trendlines
+                along, or a set of x-values at which to evaluate the trendlines.
+                Points outside the range of the input x-values will evaluate to
+                nan: no extrapolation will be attempted.
+            smooth: smoothing parameter passed to LOWESS moving_mean_std function.
+                Represents the fraction of input data points that will be smoothed
+                across at each output data point.
+
+        Returns trend_x, mean_trend, std_trend
+            trend_x: 1-d array of length points_out containing the x-values at
+                which the mean and std trends are evaluated.
+            mean_trend, std_trend: y-values for the mean and std trendlines.
+        """
+        if feature_out is None:
+            if callable(feature):
+                raise ValueError('feature_out must be specified when the provided feature is a function, not a string')
+            else:
+                feature_out = f'{feature}_z'
+        data = self.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid)
+        all_ages, all_data = numpy.concatenate(data).T
+        res = moving_mean_std.z_transform(all_ages, all_data, points_out, smooth=smooth, iters=1)
+        mean_est, std_est, z_est, trend_x, mean_trend, std_trend = res
+        if recenter_only:
+            output = all_data - mean_est
+        else:
+            output = z_est
+        lengths = list(map(len, data))
+        worm_data = numpy.split(output, numpy.cumsum(lengths)[:-1])
+        worm_ages = [d[:, 0] for d in data]
+        for worm, ages, data in zip(self, worm_ages, worm_data):
+            vals = numpy.empty_like(worm.td.age)
+            vals.fill(numpy.nan)
+            age_mask = numpy.in1d(worm.td.age, ages, assume_unique=True)
+            vals[age_mask] = data
+            setattr(worm.td, feature_out, vals)
+        return trend_x, mean_trend, std_trend
 
     def group_by(self, keys):
         """Given a list of keys (one for each worm), return a dictionary mapping
