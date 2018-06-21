@@ -24,16 +24,16 @@ def update_annotations(experiment_root):
     update the annotations dictionaries with all relevant data that can be
     automatically extracted.
     """
-    annotate(experiment_root, [TimestampAnnotator(), PoseFromMaskAnnotator()])
+    annotate(experiment_root, [annotate_timestamps, annotate_poses])
 
 def annotate(experiment_root, annotators):
     """Apply one or more measurement functions to produce annotations for manual review.
 
     Parameters:
         experiment_root: the path to an experimental directory.
-        annotators: list of annotation instances to apply to each timepoint. Each
+        annotators: list of annotation functions to call for each timepoint. Each
             will be called as:
-                annotator.annotate(experiment_root, position, timepoint, metadata, annotations)
+                annotator(experiment_root, position, timepoint, metadata, annotations)
             where:
                 experiment_root: as above
                 positions: name of position
@@ -56,25 +56,24 @@ def annotate(experiment_root, annotators):
             timepoint = metadata['timepoint']
             annotations = timepoint_annotations.setdefault(timepoint, {})
             for annotator in annotators:
-                annotator.annotate(experiment_root, position, timepoint, metadata, annotations)
+                annotator(experiment_root, position, timepoint, metadata, annotations)
     load_data.write_annotations(experiment_root, positions)
 
-class TimestampAnnotator:
-    def annotate(self, experiment_root, position, timepoint, metadata, annotations):
-        annotations['timestamp'] = metadata['timestamp']
+def annotate_timestamps(experiment_root, position, timepoint, metadata, annotations):
+    annotations['timestamp'] = metadata['timestamp']
 
-class PoseFromMaskAnnotator:
-    def __init__(self, mask_name='bf', dest_annotation='pose'):
-        self.mask_name = mask_name
-        self.dest_annotation = dest_annotation
-
-    def annotate(self, experiment_root, position, timepoint, metadata, annotations):
-        mask_path = experiment_root / DERIVED_ROOT / 'mask' / position / f'{timepoint} {self.mask_name}.png'
-        if mask_path.exists():
-            center_tck, width_tck = annotations.get('pose', (None, None))
-            if center_tck is None:
-                mask = freeimage.read(mask_path) > 0
-                annotations[self.dest_annotation] = worm_spline.pose_from_mask(mask)
+def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
+    mask_dir = experiment_root / DERIVED_ROOT / 'mask' / position
+    for mask_path in mask_dir.glob(f'{timepoint} *.png'):
+        mask_name = mask_path.stem.split(' ', 1)[1]
+        if mask_name == 'bf':
+            annotation = 'pose'
+        else:
+            annotation = f'{image_type} pose'
+        center_tck, width_tck = annotations.get(annotation, (None, None))
+        if center_tck is None:
+            mask = freeimage.read(mask_path) > 0
+            annotations[annotation] = worm_spline.pose_from_mask(mask)
 
 
 def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs=1):
