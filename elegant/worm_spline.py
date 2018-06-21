@@ -25,11 +25,12 @@ def pose_from_mask(mask):
     """
     mask = mask > 0
     # crop image for faster medial axis transform
-    sx, sy = ndimage.find_objects(mask)[0]
+    slices = ndimage.find_objects(mask)
+    if len(slices) == 0: # mask is completely empty
+        return None, None
+    sx, sy = slices[0]
     cropped = mask[sx, sy]
     centerline, widths = _get_centerline(cropped)
-    if len(centerline) == 0:
-        return None, None
     center_tck, width_tck = _get_splines(centerline, widths)
     # adjust x, y coords to account for the cropping
     c = center_tck[1]
