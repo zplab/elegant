@@ -283,18 +283,13 @@ class PoseMeasurements:
                 # storing the distance from the centerline to the edge.
                 # Double it to generate a real width.
                 measures['max_width'] = max_width * 2 * self.microns_per_pixel
-            points = interpolate.spline_interpolate(center_tck, num_points=300)
-            centroid = points.mean(axis=0)
             centroid_distances = []
             rmsds = []
             for adjacent in (before, after):
-                center_tck, width_tck = adjacent.get(self.pose_annotation, (None, None))
-                if center_tck is not None:
-                    adj_points = interpolate.spline_interpolate(center_tck, num_points=300)
-                    adj_centroid = adj_points.mean(axis=0)
-                    centroid_distances.append(numpy.linalg.norm(centroid - adj_centroid))
-                    squared_distances = ((points - adj_points)**2).sum(axis=1)
-                    rmsds.append(numpy.sqrt(numpy.mean(squared_distances)))
+                adj_center_tck, adj_width_tck = adjacent.get(self.pose_annotation, (None, None))
+                if adj_center_tck is not None:
+                    centroid_distances.append(spline_geometry.centroid_distance(center_tck, adj_center_tck, num_points=300))
+                    rmsds.append(spline_geometry.rmsd(center_tck, adj_center_tck, num_points=300))
             if len(rmsds) > 0:
                 measures['centroid_dist'] = numpy.mean(centroid_distances) * self.microns_per_pixel
                 measures['rms_dist'] = numpy.mean(rmsds) * self.microns_per_pixel
