@@ -75,6 +75,44 @@ def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
             mask = freeimage.read(mask_path) > 0
             annotations[annotation] = worm_spline.pose_from_mask(mask)
 
+def annotate_ages_from_timestamps_and_stages(experiment_root, hatch_timestamp=None, stage_annotation='stage', unhatched_stage='egg', force=False):
+    """Annotate the age of each worm from previously-annotated life stages.
+
+    Parameters:
+        hatch_timestamp: if not None, then a UNIX timestamp (~seconds since 1978)
+            specifying approximately when the worms hatched. Useful in cases
+            where the full life-cycle from hatch onward was not imaged or is
+            not being annotated.
+        stage_annotation: name of the annotation containing the life stages
+        unhatched_stage: name of the life stage where worms are unhatched. Used
+            when hatch_timestamp is None to determine the hatch time on a per-
+            worm basis.
+        force: if True, re-annotate ages even if already present.
+    """
+    positions = load_data.read_annotations(experiment_root)
+    for position_name, (position_annotations, timepoint_annotations) in positions.items():
+        _update_ages(timepoint_annotations, hatch_timestamp, stage_annotation, unhatched_stage, force)
+    load_data.write_annotations(experiment_root, positions)
+
+def _update_ages(timepoint_annotations, hatch_timestamp=None, stage_annotation='stage', unhatched_stage='egg', force=False):
+    if hatch_timestamp is None:
+        for annotations in timepoint_annotations:
+            if 'timestamp' not in annotations:
+                return
+            timestamp = annotations['timestamp']
+            page_stage = annotations.get(stage_annotation, unhatched_stage)
+            if page_stage != unhatched_stage
+                hatch_timestamp = timestamp
+                break
+    if hatch_timestamp is None:
+        return
+    for annotations in timepoint_annotations:
+        if 'age' in annotations and not force:
+            continue
+        timestamp = annotations.get('timestamp')
+        if timestamp is not None:
+            annotations['age'] = (timestamp - hatch_timestamp) / 3600 # age in hours
+
 
 def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs=1):
     """Apply one or more measurement functions to all or some worms in an experiment.
