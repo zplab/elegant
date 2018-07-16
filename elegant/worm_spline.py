@@ -39,8 +39,10 @@ def pose_from_mask(mask, smoothing=1):
     c = center_tck[1]
     c += sx.start, sy.start
     if smoothing > 0:
-        center_tck = smooth_spline(center_tck, smoothing)
-        width_tck = smooth_spline(width_tck, smoothing)
+        center_tck = interpolate.smooth_spline(center_tck,
+            num_points=int(center_tck[0][-1]), smoothing=smoothing)
+        width_tck = interpolate.smooth_spline(width_tck, num_points=100,
+            smoothing=smoothing)
     return center_tck, width_tck
 
 def _get_centerline(mask):
@@ -120,20 +122,6 @@ def _get_splines(centerline, widths):
     x = numpy.linspace(0, 1, len(new_widths))
     width_tck = interpolate.fit_nonparametric_spline(x, new_widths, smoothing=0.2*len(centerline))
     return center_tck, width_tck
-
-def smooth_spline(tck, smoothing=1):
-    """Smooth a spline by interpolating and then re-fitting with smoothing.
-
-    Parameters:
-        tck: parametric or nonparametric spline
-        smoothing: the average distance between the original and smoothed splines
-            will be less than this factor. Larger values generate smoother splines.
-
-    Returns: smoothed tck
-
-    """
-    points = interpolate.spline_interpolate(tck, num_points=int(tck[0][-1]))
-    return interpolate.fit_spline(points, smoothing=smoothing*len(points))
 
 def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_distance=None,
         standard_length=None, standard_width=None, zoom=1, order=3, dtype=None, **kwargs):
