@@ -117,10 +117,12 @@ def _update_ages(timepoint_annotations, position_annotations, stage_annotation='
                 return
             timestamp = annotations['timestamp']
             page_stage = annotations.get(stage_annotation, unhatched_stage)
-            if page_stage != unhatched_stage
+            if page_stage != unhatched_stage:
                 hatch_timestamp = timestamp
                 break
         if hatch_timestamp is None:
+            if 'hatch_timestamp' in position_annotations:
+                del position_annotations['hatch_timestamp']
             return
         else:
             position_annotations['hatch_timestamp'] = hatch_timestamp

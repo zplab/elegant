@@ -36,7 +36,6 @@ class StageField(annotator.AnnotationField):
         self.shortcuts = shortcuts
         self.colors = {stages[0]: self.FIRST_COLOR, stages[-1]: self.LAST_COLOR}
         self.colors.update(zip(stages[1:-1], self.COLOR_CYCLE))
-        self.hatch_timestamp = hatch_timestamp
         super().__init__(name)
 
     def init_widget(self):
@@ -108,4 +107,6 @@ class StageField(annotator.AnnotationField):
             if not hasattr(page, 'annotations'):
                 return
             timepoint_annotations.append(page.annotations)
+        if not hasattr(self, 'position_annotations'):
+            return
         hatch_timestamp = process_data._update_ages(timepoint_annotations, self.position_annotations, self.name, self.stages[0])
