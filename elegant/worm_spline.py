@@ -39,7 +39,6 @@ def pose_from_mask(mask):
     c += sx.start, sy.start
     return center_tck, width_tck
 
-
 def _get_centerline(mask):
     # Strategy: use the medial axis transform to get a skeleton of the mask,
     # then find the endpoints with a binary hit-or-miss operation. Next,
@@ -79,7 +78,6 @@ def _get_centerline(mask):
     widths = distances[list(centerline.T)]
     return centerline, widths
 
-
 def _rotated_hit_or_miss(mask, structure1, structure2):
     # perform a binary hit-or-miss with structure2 rotated in all four orientations,
     # or-ing together the output.
@@ -88,7 +86,6 @@ def _rotated_hit_or_miss(mask, structure1, structure2):
         structure2 = structure2[::-1].T # rotate 90 degrees
         output |= ndimage.binary_hit_or_miss(mask, structure1, structure2)
     return output
-
 
 def _get_splines(centerline, widths):
     # Strategy: extrapolate the first/last few pixels to get the full length of
@@ -120,8 +117,7 @@ def _get_splines(centerline, widths):
     width_tck = interpolate.fit_nonparametric_spline(x, new_widths, smoothing=0.2*len(centerline))
     return center_tck, width_tck
 
-
-def  to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_distance=None,
+def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_distance=None,
         standard_length=None, standard_width=None, zoom=1, order=3, dtype=None, **kwargs):
     """Transform images from the lab reference frame to the worm reference frame.
 
@@ -175,6 +171,7 @@ def  to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_d
     Returns: single image or list of images (depending on whether the input is a
         single image or list/tuple/3d array).
     """
+
     assert width_tck is not None or sample_distance is not None
     if standard_width is not None:
         assert width_tck is not None
@@ -191,40 +188,19 @@ def  to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_d
     width = int(round(2 * sample_distance * zoom))
 
     # basic plan:
-    # get the centerline, then construct perpendiculars to it
-    # then define positions along each perpendicular at which to sample the input images.
-    # This is the "offset_directions" variable.
-    points = interpolate.spline_interpolate(center_tck, length) # shape = (length, 2)
-    points = points.T[..., numpy.newaxis] # now points.shape = (2, length, 1)
+    # 1) get the centerline and the perpendiculars to it.
+    # 2) define positions along each perpendicular at which to sample the input images.
+    # (This is the "offset_distances" variable).
 
-    perpendiculars = spline_geometry.perpendiculars(center_tck, length).T # shape = (2, length)
+    x = numpy.arange(length, dtype=float)
+    y = numpy.ones_like(x) * (width / 2)
+    worm_frame_centerline = numpy.transpose([x, y])
+    centerline, perpendiculars, spline_y = _lab_centerline_and_perps(worm_frame_centerline, (length, width),
+        center_tck, width_tck, standard_width, zoom)
     offsets = numpy.linspace(-sample_distance, sample_distance, width) # distances along each perpendicular across the width of the sample swath
-    offset_directions = numpy.multiply.outer(perpendiculars, offsets) # shape = (2, length, width)
-
-    # if we are given a width profile to warp to, do so by adjusting the offset_directions
-    # value to be longer or less-long than normal based on whether the width at any
-    # position is wider or narrower (respectively) than the standard width.
-    if standard_width is not None:
-        src_widths = interpolate.spline_interpolate(width_tck, num_points=length)
-        dst_widths = interpolate.spline_interpolate(standard_width, num_points=length)
-        zero_width = dst_widths == 0
-        dst_widths[zero_width] = 1 # don't want to divide by zero below
-        width_ratios = src_widths / dst_widths # shape = (length,)
-        width_ratios[zero_width] = 0 # this will enforce dest width of zero at these points
-        # ratios are width_tck / standard_tck. If the worm is wider than the standard width
-        # we need to compress it, meaning go farther out for each sample
-        offset_directions *= width_ratios[:, numpy.newaxis]
-        # Note: shape of width_ratios[:, numpy.newaxis] is (length, 1), which numpy promotes to (1, length, 1)
-        # which is compatible with offset_directions's (2, length, width): we multiply both the offsets' x and y
-        # coords by the ratio to scale the offset vectors.
-
-    # now the positions in the image to sample from is just the x,y points of the centerline
-    # plus the offset directions.
-    # points.shape = (2, length, 1), and offset_directions.shape = (2, length, width)
-    # where the first axis is x vs. y, the second axis is along the length of the worm
-    # and the third is along the width. The output has shape (2, length, width),
-    # which fully defines the positions at which to sample the image.
-    sample_coordinates = points + offset_directions
+    offset_distances = numpy.multiply.outer(perpendiculars.T, offsets) # shape = (2, length, width)
+    centerline = centerline.T[:, :, numpy.newaxis] # from shape = (length, 2) to shape = (2, length, 1)
+    sample_coordinates = centerline + offset_distances # shape = (2, length, width)
 
     unpack_list = False
     if isinstance(images, numpy.ndarray):
@@ -239,6 +215,224 @@ def  to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_d
         worm_frame = worm_frame[0]
     return worm_frame
 
+def _lab_centerline_and_perps(coordinates, worm_image_shape, center_tck, width_tck, standard_width, zoom):
+    if standard_width is not None:
+        assert width_tck is not None
+
+    worm_frame_x, worm_frame_y = numpy.asarray(coordinates, dtype=float).T
+    x_max, y_max = numpy.array(worm_image_shape) - 1
+    rel_x = worm_frame_x / x_max
+    spline_x = rel_x * center_tck[0][-1] # account for zoom / standard length
+    spline_y = (worm_frame_y - y_max/2) / zoom
+
+    # basic plan: get the centerline, then construct perpendiculars to it.
+    # for notes below, let length = len(coordinates)
+    centerline = interpolate.spline_evaluate(center_tck, spline_x) # shape = (length, 2)
+    perpendiculars = spline_geometry.perpendiculars_at(center_tck, spline_x) # shape = (length, 2)
+
+    # if we are given a width profile to warp to, do so by adjusting the offset_directions
+    # value to be longer or less-long than normal based on whether the width at any
+    # position is wider or narrower (respectively) than the standard width.
+    if standard_width is not None:
+        src_widths = interpolate.spline_evaluate(width_tck, rel_x)
+        dst_widths = interpolate.spline_evaluate(standard_width, rel_x)
+        print(src_widths, dst_widths)
+        zero_width = dst_widths == 0
+        dst_widths[zero_width] = 1 # don't want to divide by zero below
+        width_ratios = src_widths / dst_widths # shape = (length,)
+        width_ratios[zero_width] = 0 # this will enforce dest width of zero at these points
+        # ratios are width_tck / standard_tck. If the worm is wider than the standard width
+        # we need to compress it, meaning go farther out for each sample
+        perpendiculars *= width_ratios[:, numpy.newaxis]
+    return centerline, perpendiculars, spline_y
+
+def coordinates_to_lab_frame(coordinates, worm_image_shape, center_tck, width_tck=None,
+        standard_width=None, zoom=1):
+    """Transform a list of coordinates to the lab frame of reference.
+
+    Coordinates are defined relative to a worm frame-of-reference image, as
+    produced by to_worm_frame(). All parameters must be the same as those passed
+    to to_worm_frame() for the coordinate transform to be correct. In particular,
+    if a standard_width and/or a zoom factor were used to produce the image,
+    those values must be used here as well.
+
+    Parameters:
+        coordinates: shape (num_coords, 2) list of coordinates.
+        worm_image_shape: shape of worm image in which the coordinates are defined
+        center_tck: centerline spline defining the pose of the worm in the lab
+            frame.
+        width_tck: If standard_width is specified, a width_tck must also be
+            specified to define the transform from this worm's width profile to
+            the standardized width profile.
+        standard_width: a width spline specifying the "standardized" width
+            profile for the output image. If specified, the actual width profile
+            must also be provided as width_tck.
+        zoom: zoom factor.
+
+    """
+    centerline, perpendiculars, spline_y = _lab_centerline_and_perps(coordinates, worm_image_shape,
+        center_tck, width_tck, standard_width, zoom)
+    return centerline + perpendiculars * spline_y[:, numpy.newaxis]
+
+def coordinates_to_worm_frame(coords, worm_image_shape, center_tck, width_tck=None,
+        standard_width=None, zoom=1):
+    """Transform 2D coordinates from the lab to worm frame of reference.
+    """
+    if standard_width is not None:
+        assert width_tck is not None
+    coords = numpy.asarray(coords)
+    oversample = 4 # oversample a bit to get subpixel precision in coordinate locations
+    num_points = worm_image_shape[0] * oversample
+    points = interpolate.spline_interpolate(center_tck, num_points=num_points) # shape (n, 2)
+    kd = spatial.cKDTree(points)
+    distances, indices = kd.query(coords)
+    # indices is the index into the centerline points array of the closest centerline point
+    # for each nonzero mask pixel.
+    # distances is the distance from each nonzero mask pixel to that centerline point
+    worm_frame_x = indices / oversample
+
+    nearest_points = points[indices]
+    offsets = coords - nearest_points
+    perps = spline_geometry.perpendiculars(center_tck, num_points=num_points)
+    matching_perps = perps[indices]
+    # sign of dot product between perpendiculars and offset vectors (which should
+    # basically be either parallel or antiparallel) tells which side of centerline we're on:
+    # if sign is negative, we're on the right side of the worm, which has y-values smaller
+    # than the centerline in the worm-frame image (i.e. is above the centerline)
+    side = numpy.sign((matching_perps * offsets).sum(axis=1))
+
+    if standard_width is not None:
+        src_widths = interpolate.spline_interpolate(width_tck, num_points=num_points)
+        dst_widths = interpolate.spline_interpolate(standard_width, num_points=num_points)
+        zero_width = src_widths == 0
+        src_widths[zero_width] = 1 # don't want to divide by zero below
+        width_ratios = dst_widths / src_widths # shape = (length,)
+        width_ratios[zero_width] = 0 # this will enforce src width of zero at these points
+        # ratios are standard_width / width_tck. Where the worm is wider than the standard
+        # profile, need to go less far into the (standardized) image than the widths
+        # would have you believe, so reduce the distances accordingly
+        distances *= numpy.interp(indices, numpy.arange(num_points), width_ratios)
+    worm_frame_y = worm_image_shape[1]/2 + side*distances*zoom # shape[1]/2 is the position of the centerline
+    return numpy.transpose([worm_frame_x, worm_frame_y])
+
+def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
+        standard_width=None, zoom=1, order=3, dtype=None, cval=0, **kwargs):
+    """Transform images from the worm reference frame to the lab reference frame.
+
+    This is the inverse transform from to_worm_frame. Regions outside of the
+    worm mask in the lab frame of reference will be set equal to the 'cval'
+    parameter.
+
+    Parameters:
+        images: single numpy array, or list/tuple/3d array of multiple images to
+            be transformed.
+        lab_image_shape: shape of lab-frame image.
+        center_tck: spline defining the pose of the worm in the lab frame.
+        width_tck: spline defining the distance from centerline to worm edges.
+        standard_width: a width spline specifying the "standardized" width
+            profile used to generate the worm-frame image(s), if any.
+        zoom: zoom factor used to generate the worm-frame image(s).
+        order: image interpolation order (0 = nearest neighbor, 1 = linear,
+            3 = cubic). Cubic is best, but slowest.
+        dtype: if None, use dtype of input images for output. Otherwise, use
+            the specified dtype.
+        cval: value with which the lab-frame image will be filled outside of the
+            worm are. (numpy.nan with dtype=float is a potentially useful
+            combination.)
+        kwargs: additional keyword arguments to pass to ndimage.map_coordinates.
+
+    Returns: single image or list of images (depending on whether the input is a
+        single image or list/tuple/3d array).
+    """
+    unpack_list = False
+    if isinstance(images, numpy.ndarray):
+        if images.ndim == 3:
+            images = list(images)
+        else:
+            unpack_list = True
+            images = [images]
+    worm_image_shape = images[0].shape
+    for image in images[1:]:
+        assert image.shape == worm_image_shape
+
+    mask = lab_frame_mask(center_tck, width_tck, lab_image_shape) > 0
+    mask_coords = numpy.transpose(mask.nonzero()) # shape (m, 2) where m is number of in-mask pixels
+    sample_coordinates = coordinates_to_worm_frame(mask_coords, worm_image_shape,
+        center_tck, width_tck, standard_width, zoom).T
+
+    lab_frame = []
+    dtype = kwargs.get('output')
+    for image in images:
+        lab_frame_image = numpy.empty(lab_image_shape, dtype=image.dtype if dtype is None else dtype)
+        lab_frame_image.fill(cval)
+        lab_frame_image[mask] = ndimage.map_coordinates(image, sample_coordinates,
+            order=order, cval=cval, output=dtype, **kwargs)
+        lab_frame.append(lab_frame_image)
+    if unpack_list:
+        lab_frame = lab_frame[0]
+    return lab_frame
+
+def lab_frame_mask(center_tck, width_tck, image_shape, num_spline_points=None, antialias=False):
+    """Use a centerline and width spline to draw a worm mask image in the lab frame of reference.
+
+    Parameters:
+        center_tck, width_tck: centerline and width splines defining worm pose.
+        image_shape: shape of the output mask
+        num_spline_points: number of points to evaluate the worm outline along
+            (more points = smoother mask). By default, ~1 point/pixel will be
+            used, which is more than enough.
+        antialias: if False, return a mask with only values 0 and 255. If True,
+            edges will be smoothed for better appearance. This is slightly slower,
+            and unnecessary when just using the mask to select pixels of interest.
+
+    Returns: mask image with dtype=numpy.uint8 in range [0, 255]. To obtain a
+        True/False-valued mask from a uint8 mask (regardless of antialiasing):
+            bool_mask = uint8_mask > 255
+    """
+    path = celiagg.Path()
+    path.lines(spline_geometry.outline(center_tck, width_tck, num_points=num_spline_points)[-1])
+    return _celiagg_draw_mask(image_shape, path, antialias)
+
+def worm_frame_mask(width_tck, image_shape, num_spline_points=None, antialias=False, zoom=1):
+    """Use a centerline and width spline to draw a worm mask image in the worm frame of reference.
+
+    Parameters:
+        width_tck: width splines defining worm outline
+        image_shape: shape of the output mask
+        num_spline_points: number of points to evaluate the worm outline along
+            (more points = smoother mask). By default, ~1 point/pixel will be
+            used, which is more than enough.
+        antialias: if False, return a mask with only values 0 and 255. If True,
+            edges will be smoothed for better appearance. This is slightly slower,
+            and unnecessary when just using the mask to select pixels of interest.
+        zoom: zoom-value to use (for matching output of to_worm_frame with zooming.)
+
+    Returns: mask image with dtype=numpy.uint8 in range [0, 255]. To obtain a
+        True/False-valued mask from a uint8 mask (regardless of antialiasing):
+            bool_mask = uint8_mask > 255
+    """
+    worm_length = image_shape[0]
+    if num_spline_points is None:
+        num_spline_points = worm_length
+    widths = interpolate.spline_interpolate(width_tck, num_points=num_spline_points)
+    widths *= zoom
+    x_vals = numpy.linspace(0, worm_length, num_spline_points)
+    centerline_y = image_shape[1] / 2
+    top = numpy.transpose([x_vals, centerline_y - widths])
+    bottom = numpy.transpose([x_vals, centerline_y + widths])[::-1]
+    path = celiagg.Path()
+    path.lines(numpy.concatenate([top, bottom]))
+    return _celiagg_draw_mask(image_shape, path, antialias)
+
+def _celiagg_draw_mask(image_shape, path, antialias):
+    image = numpy.zeros(image_shape, dtype=numpy.uint8, order='F')
+    # NB celiagg uses (h, w) C-order convention for image shapes
+    canvas = celiagg.CanvasG8(image.T)
+    state = celiagg.GraphicsState(drawing_mode=celiagg.DrawingMode.DrawFill, anti_aliased=antialias)
+    fill = celiagg.SolidPaint(1,1,1)
+    transform = celiagg.Transform()
+    canvas.draw_shape(path, transform, state, fill=fill)
+    return image
 
 def longitudinal_warp_spline(t_in, t_out, center_tck, width_tck=None):
     """Transform a worm spline by longitudinally compressing/expanding it.
@@ -293,156 +487,3 @@ def longitudinal_warp_spline(t_in, t_out, center_tck, width_tck=None):
         new_t = monotonic_interpolator(t)
         width_tck = new_t, c, k
     return center_tck, width_tck
-
-
-def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
-        standard_width=None, worm_zoom=1, order=3, dtype=None, cval=0, **kwargs):
-    """Transform images from the worm reference frame to the lab reference frame.
-
-    This is the inverse transform from to_worm_frame. Regions outside of the
-    worm mask in the lab frame of reference will be set equal to the 'cval'
-    parameter.
-
-    Parameters:
-        images: single numpy array, or list/tuple/3d array of multiple images to
-            be transformed.
-        lab_image_shape: shape of lab-frame image.
-        center_tck: spline defining the pose of the worm in the lab frame.
-        width_tck: spline defining the distance from centerline to worm edges.
-        standard_width: a width spline specifying the "standardized" width
-            profile used to generate the worm-frame image(s), if any.
-        worm_zoom: zoom factor used to generate the worm-frame image(s).
-        order: image interpolation order (0 = nearest neighbor, 1 = linear,
-            3 = cubic). Cubic is best, but slowest.
-        dtype: if None, use dtype of input images for output. Otherwise, use
-            the specified dtype.
-        cval: value with which the lab-frame image will be filled outside of the
-            worm are. (numpy.nan with dtype=float is a potentially useful
-            combination.)
-        kwargs: additional keyword arguments to pass to ndimage.map_coordinates.
-
-    Returns: single image or list of images (depending on whether the input is a
-        single image or list/tuple/3d array).
-    """
-    unpack_list = False
-    if isinstance(images, numpy.ndarray):
-        if images.ndim == 3:
-            images = list(images)
-        else:
-            unpack_list = True
-            images = [images]
-    shape = images[0].shape
-    for image in images[1:]:
-        assert image.shape == shape
-
-    oversample = 4 # oversample a bit to get subpixel precision in coordinate locations
-    points = interpolate.spline_interpolate(center_tck, num_points=oversample*shape[0]) # shape (n, 2)
-    kd = spatial.cKDTree(points)
-    mask = lab_frame_mask(center_tck, width_tck, lab_image_shape) > 0
-    mask_indices = numpy.transpose(mask.nonzero()) # shape (m, 2) where m is number of in-mask pixels
-    distances, indices = kd.query(mask_indices)
-    # indices is the index into the centerline points array of the closest centerline point
-    # for each nonzero mask pixel.
-    # distances is the distance from each nonzero mask pixel to that centerline point
-    worm_frame_x = indices / oversample
-
-    nearest_points = points[indices]
-    offsets = mask_indices - nearest_points
-    perps = spline_geometry.perpendiculars(center_tck, num_points=len(points))
-    matching_perps = perps[indices]
-    # sign of dot product between perpendiculars and offset vectors (which should
-    # basically be either parallel or antiparallel) tells which side of centerline we're on:
-    # if sign is negative, we're on the right side of the worm, which has y-values smaller
-    # than the centerline in the worm-frame image (i.e. is above the centerline)
-    side = numpy.sign((matching_perps * offsets).sum(axis=1))
-
-    if standard_width is not None:
-        src_widths = interpolate.spline_interpolate(width_tck, num_points=len(points))
-        dst_widths = interpolate.spline_interpolate(standard_width, num_points=len(points))
-        zero_width = src_widths == 0
-        src_widths[zero_width] = 1 # don't want to divide by zero below
-        width_ratios = dst_widths / src_widths # shape = (length,)
-        width_ratios[zero_width] = 0 # this will enforce src width of zero at these points
-        # ratios are standard_width / width_tck. Where the worm is wider than the standard
-        # profile, need to sample less far into the (standardized) image than the widths
-        # would have you believe, so reduce the distances accordingly
-        distances *= numpy.interp(indices, numpy.arange(len(points)), width_ratios)
-    worm_frame_y = shape[1]/2 + side*distances*worm_zoom # shape[1]/2 is the position of the centerline
-    sample_coordinates = numpy.array([worm_frame_x, worm_frame_y])
-
-    lab_frame = []
-    dtype = kwargs.get('output')
-    for image in images:
-        lab_frame_image = numpy.empty(lab_image_shape, dtype=image.dtype if dtype is None else dtype)
-        lab_frame_image.fill(cval)
-        lab_frame_image[mask] = ndimage.map_coordinates(image, sample_coordinates,
-            order=order, cval=cval, output=dtype, **kwargs)
-        lab_frame.append(lab_frame_image)
-    if unpack_list:
-        lab_frame = lab_frame[0]
-    return lab_frame
-
-
-def lab_frame_mask(center_tck, width_tck, image_shape, num_spline_points=None, antialias=False):
-    """Use a centerline and width spline to draw a worm mask image in the lab frame of reference.
-
-    Parameters:
-        center_tck, width_tck: centerline and width splines defining worm pose.
-        image_shape: shape of the output mask
-        num_spline_points: number of points to evaluate the worm outline along
-            (more points = smoother mask). By default, ~1 point/pixel will be
-            used, which is more than enough.
-        antialias: if False, return a mask with only values 0 and 255. If True,
-            edges will be smoothed for better appearance. This is slightly slower,
-            and unnecessary when just using the mask to select pixels of interest.
-
-    Returns: mask image with dtype=numpy.uint8 in range [0, 255]. To obtain a
-        True/False-valued mask from a uint8 mask (regardless of antialiasing):
-            bool_mask = uint8_mask > 255
-    """
-    path = celiagg.Path()
-    path.lines(spline_geometry.outline(center_tck, width_tck, num_points=num_spline_points)[-1])
-    return _celiagg_draw_mask(image_shape, path, antialias)
-
-
-def worm_frame_mask(width_tck, image_shape, num_spline_points=None, antialias=False, zoom=1):
-    """Use a centerline and width spline to draw a worm mask image in the worm frame of reference.
-
-    Parameters:
-        width_tck: width splines defining worm outline
-        image_shape: shape of the output mask
-        num_spline_points: number of points to evaluate the worm outline along
-            (more points = smoother mask). By default, ~1 point/pixel will be
-            used, which is more than enough.
-        antialias: if False, return a mask with only values 0 and 255. If True,
-            edges will be smoothed for better appearance. This is slightly slower,
-            and unnecessary when just using the mask to select pixels of interest.
-        zoom: zoom-value to use (for matching output of to_worm_frame with zooming.)
-
-    Returns: mask image with dtype=numpy.uint8 in range [0, 255]. To obtain a
-        True/False-valued mask from a uint8 mask (regardless of antialiasing):
-            bool_mask = uint8_mask > 255
-    """
-    worm_length = image_shape[0]
-    if num_spline_points is None:
-        num_spline_points = worm_length
-    widths = interpolate.spline_interpolate(width_tck, num_points=num_spline_points)
-    widths *= zoom
-    x_vals = numpy.linspace(0, worm_length, num_spline_points)
-    centerline_y = image_shape[1] / 2
-    top = numpy.transpose([x_vals, centerline_y - widths])
-    bottom = numpy.transpose([x_vals, centerline_y + widths])[::-1]
-    path = celiagg.Path()
-    path.lines(numpy.concatenate([top, bottom]))
-    return _celiagg_draw_mask(image_shape, path, antialias)
-
-
-def _celiagg_draw_mask(image_shape, path, antialias):
-    image = numpy.zeros(image_shape, dtype=numpy.uint8, order='F')
-    # NB celiagg uses (h, w) C-order convention for image shapes
-    canvas = celiagg.CanvasG8(image.T)
-    state = celiagg.GraphicsState(drawing_mode=celiagg.DrawingMode.DrawFill, anti_aliased=antialias)
-    fill = celiagg.SolidPaint(1,1,1)
-    transform = celiagg.Transform()
-    canvas.draw_shape(path, transform, state, fill=fill)
-    return image
