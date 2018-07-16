@@ -113,7 +113,7 @@ def scan_positions(experiment_root, position_filter, channels='bf', image_ext='p
     positions = read_annotations(experiment_root)
     selected_positions = filter_annotations(positions, position_filter)
     def timepoint_filter(position_name, timepoint_name):
-        return position_name in selected_positions and timepoint_name in positions[position_name][1]
+        return position_name in selected_positions and timepoint_name in selected_positions[position_name][1]
     return scan_experiment_dir(experiment_root, channels, timepoint_filter, image_ext)
 
 def add_position_to_flipbook(ris_widget, position):
