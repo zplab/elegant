@@ -13,12 +13,13 @@ from zplib.curve import spline_geometry
 from zplib.curve import interpolate
 
 
-def pose_from_mask(mask):
+def pose_from_mask(mask, smoothing=1):
     """Calculate worm pose splines from mask image.
 
     Parameter:
         mask: a binary mask image with a single object
-
+        smoothing: smoothing factor to apply to splines produced (see docstring
+            for smooth_spline). If 0, no smoothing will be applied.
     Returns: center_tck, width_tck
         splines defining the (x, y) position of the centerline and the distance
         from the centerline to the edge (called "widths" but more like "half-
@@ -37,6 +38,9 @@ def pose_from_mask(mask):
     # adjust x, y coords to account for the cropping
     c = center_tck[1]
     c += sx.start, sy.start
+    if smoothing > 0:
+        center_tck = smooth_spline(center_tck, smoothing)
+        width_tck = smooth_spline(width_tck, smoothing)
     return center_tck, width_tck
 
 def _get_centerline(mask):
@@ -116,6 +120,20 @@ def _get_splines(centerline, widths):
     x = numpy.linspace(0, 1, len(new_widths))
     width_tck = interpolate.fit_nonparametric_spline(x, new_widths, smoothing=0.2*len(centerline))
     return center_tck, width_tck
+
+def smooth_spline(tck, smoothing=1):
+    """Smooth a spline by interpolating and then re-fitting with smoothing.
+
+    Parameters:
+        tck: parametric or nonparametric spline
+        smoothing: the average distance between the original and smoothed splines
+            will be less than this factor. Larger values generate smoother splines.
+
+    Returns: smoothed tck
+
+    """
+    points = interpolate.spline_interpolate(tck, num_points=int(tck[0][-1]))
+    return interpolate.fit_spline(points, smoothing=smoothing*len(points))
 
 def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_distance=None,
         standard_length=None, standard_width=None, zoom=1, order=3, dtype=None, **kwargs):
@@ -248,9 +266,9 @@ def _lab_centerline_and_perps(coordinates, worm_image_shape, center_tck, width_t
 
 def coordinates_to_lab_frame(coordinates, worm_image_shape, center_tck, width_tck=None,
         standard_width=None, zoom=1):
-    """Transform a list of coordinates to the lab frame of reference.
+    """Transform a list of coordinates from the worm to the lab reference frame.
 
-    Coordinates are defined relative to a worm frame-of-reference image, as
+    The coordinates are defined relative to a worm frame-of-reference image, as
     produced by to_worm_frame(). All parameters must be the same as those passed
     to to_worm_frame() for the coordinate transform to be correct. In particular,
     if a standard_width and/or a zoom factor were used to produce the image,
@@ -269,6 +287,7 @@ def coordinates_to_lab_frame(coordinates, worm_image_shape, center_tck, width_tc
             must also be provided as width_tck.
         zoom: zoom factor.
 
+    Returns: coordinate array with shape=(num_coords, 2)
     """
     centerline, perpendiculars, spline_y = _lab_centerline_and_perps(coordinates, worm_image_shape,
         center_tck, width_tck, standard_width, zoom)
@@ -276,7 +295,28 @@ def coordinates_to_lab_frame(coordinates, worm_image_shape, center_tck, width_tc
 
 def coordinates_to_worm_frame(coords, worm_image_shape, center_tck, width_tck=None,
         standard_width=None, zoom=1):
-    """Transform 2D coordinates from the lab to worm frame of reference.
+    """Transform a list of coordinates from the lab to the worm reference frame.
+
+    The output coordinates are relative to a worm frame-of-reference image, as
+    produced by to_worm_frame(). All parameters must be the same as those passed
+    to to_worm_frame() for the coordinate transform to be correct. In particular,
+    if a standard_width and/or a zoom factor were used to produce the image,
+    those values must be used here as well.
+
+    Parameters:
+        coordinates: shape (num_coords, 2) list of coordinates.
+        worm_image_shape: shape of worm image in which the coordinates are defined
+        center_tck: centerline spline defining the pose of the worm in the lab
+            frame.
+        width_tck: If standard_width is specified, a width_tck must also be
+            specified to define the transform from this worm's width profile to
+            the standardized width profile.
+        standard_width: a width spline specifying the "standardized" width
+            profile for the output image. If specified, the actual width profile
+            must also be provided as width_tck.
+        zoom: zoom factor.
+
+    Returns: coordinate array with shape=(num_coords, 2)
     """
     if standard_width is not None:
         assert width_tck is not None
