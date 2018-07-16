@@ -6,6 +6,7 @@ import multiprocessing
 import json
 import numpy
 import collections
+import datetime
 
 from zplib.curve import spline_geometry
 from zplib.curve import interpolate
@@ -75,26 +76,41 @@ def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
             mask = freeimage.read(mask_path) > 0
             annotations[annotation] = worm_spline.pose_from_mask(mask)
 
-def annotate_ages_from_timestamps_and_stages(experiment_root, hatch_timestamp=None, stage_annotation='stage', unhatched_stage='egg', force=False):
+def set_hatch_time(experiment_root, year, month, day, hour):
+    """Manually set a hatch-time for all worms in an experiment.
+
+    This is useful in cases where the full life-cycle from hatch onward was not
+    imaged or is not being annotated. Precisions of minutes and seconds are not
+    used because there can't be that much precision across a whole experiment
+    directory.
+
+    Parameters:
+        experiment_root: the path to an experimental directory.
+        year, month, day, hour: integer values for the time of hatching
+    """
+    hatch_timestamp = datetime.datetime(year, month, day, hour).timestamp()
+    positions = load_data.read_annotations(experiment_root)
+    for position_name, (position_annotations, timepoint_annotations) in positions.items():
+        position_annotations['hatch_timestamp'] = hatch_timestamp
+    load_data.write_annotations(experiment_root, positions)
+
+def annotate_ages_from_timestamps_and_stages(experiment_root, stage_annotation='stage', unhatched_stage='egg'):
     """Annotate the age of each worm from previously-annotated life stages.
 
     Parameters:
-        hatch_timestamp: if not None, then a UNIX timestamp (~seconds since 1978)
-            specifying approximately when the worms hatched. Useful in cases
-            where the full life-cycle from hatch onward was not imaged or is
-            not being annotated.
+        experiment_root: the path to an experimental directory.
         stage_annotation: name of the annotation containing the life stages
         unhatched_stage: name of the life stage where worms are unhatched. Used
             when hatch_timestamp is None to determine the hatch time on a per-
             worm basis.
-        force: if True, re-annotate ages even if already present.
     """
     positions = load_data.read_annotations(experiment_root)
     for position_name, (position_annotations, timepoint_annotations) in positions.items():
-        _update_ages(timepoint_annotations, hatch_timestamp, stage_annotation, unhatched_stage, force)
+        _update_ages(timepoint_annotations, position_annotations, stage_annotation, unhatched_stage, force=True)
     load_data.write_annotations(experiment_root, positions)
 
-def _update_ages(timepoint_annotations, hatch_timestamp=None, stage_annotation='stage', unhatched_stage='egg', force=False):
+def _update_ages(timepoint_annotations, position_annotations, stage_annotation='stage', unhatched_stage='egg', force=False):
+    hatch_timestamp = position_annotations.get('hatch_timestamp')
     if hatch_timestamp is None:
         for annotations in timepoint_annotations:
             if 'timestamp' not in annotations:
@@ -104,8 +120,10 @@ def _update_ages(timepoint_annotations, hatch_timestamp=None, stage_annotation='
             if page_stage != unhatched_stage
                 hatch_timestamp = timestamp
                 break
-    if hatch_timestamp is None:
-        return
+        if hatch_timestamp is None:
+            return
+        else:
+            position_annotations['hatch_timestamp'] = hatch_timestamp
     for annotations in timepoint_annotations:
         if 'age' in annotations and not force:
             continue

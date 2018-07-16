@@ -47,6 +47,7 @@ class ExperimentAnnotator:
         self.ris_widget = ris_widget
         self.readonly = readonly
         ris_widget.add_annotator(annotation_fields)
+        self.annotation_fields = annotation_fields
         self._init_positions(positions)
         self.position_names_to_indices = {name: i for i, name in enumerate(self.position_names)}
         self.position_i = None
@@ -148,6 +149,8 @@ class ExperimentAnnotator:
             for timepoint_name, page in zip(timepoint_names, self.ris_widget.flipbook_pages):
                 page._timepoint_name = timepoint_name
             self.load_annotations()
+            for field in self.annotation_fields:
+                field.position_annotations = self.position_annotations
             if '__last_timepoint_annotated__' in self.position_annotations:
                 timepoint_name = self.position_annotations['__last_timepoint_annotated__']
                 i = self.timepoint_indices.get(timepoint_name, 0)
