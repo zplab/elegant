@@ -53,16 +53,16 @@ def _get_centerline(mask):
     # provided by the medial axis transform, compute how "wide" the worm is at
     # each centerline point ("width" is actually a half-width...)
     skeleton, distances = morphology.medial_axis(mask, return_distance=True)
-    # 1-values in structure1 are where we require a True in the input if the transform is to be True
-    # 1-values in structure2 are where we requre a False in the input if the transform is to be True
+    # 1-values in structure1 are where we require a True in the input for a True output
+    # 1-values in structure2 are where we require a False in the input for a True output
     # so: structure1 requires a point in the middle of a 3x3 neighborhoood be True
-    # and structure2 requires that it be an endpoint, i.e. only have one axial neighbor
+    # and structure2 requires that it be an endpoint with exactly one axial neighbor
     structure1 = numpy.array([[0,0,0],[0,1,0],[0,0,0]])
     structure2 = numpy.array([[1,0,1],[1,0,1],[1,1,1]])
     # return the union of all places that structure2 matches, when rotated to all four orientations
     endpoints = _rotated_hit_or_miss(skeleton, structure1, structure2)
     # now modify structure2 to signal when there is exactly one diagonal neighbor
-    structure2 = numpy.array([[1,1,1],[1,0,1],[1,1,0]])
+    structure2 = numpy.array([[0,1,1],[1,0,1],[1,1,1]])
     endpoints |= _rotated_hit_or_miss(skeleton, structure1, structure2)
     ep_indices = numpy.transpose(endpoints.nonzero())
 

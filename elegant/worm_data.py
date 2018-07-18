@@ -237,6 +237,8 @@ class Worm(object):
             # add each entry in the timepoint data to the corresponding list in
             # vals_for_features
             for feature_vals, item in zip(vals_for_features, timepoint):
+                if item is None:
+                    item = numpy.nan
                 feature_vals.append(item)
         for feature_name, feature_vals in zip(feature_names, vals_for_features):
             arr = numpy.array(feature_vals)
@@ -661,6 +663,8 @@ class Worms(collections.UserList):
                     if vals.dtype == float:
                         good = ~numpy.isnan(vals)
                         vals = [str(v) if g else '' for v, g in zip(vals, good)]
+                    elif vals.dtype == object:
+                        vals = [str(v) if v is not None else '' for v in vals]
                 cols.append(vals)
             assert all(len(c) == n for c in cols)
             rows = [[] for _ in range(n)]

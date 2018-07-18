@@ -314,7 +314,7 @@ class PoseMeasurements:
 
     If no pose annotation is present, Nones are returned.
 
-    Note: the correct microns_per_pixel conversion factor passed to the
+    Note: the correct microns_per_pixel conversion factor MUST passed to the
     constructor of this class.
     """
     feature_names = ['length', 'volume', 'surface_area', 'projected_area', 'max_width', 'centroid_dist', 'rms_dist']
@@ -351,7 +351,7 @@ class PoseMeasurements:
             if len(rmsds) > 0:
                 measures['centroid_dist'] = numpy.mean(centroid_distances) * self.microns_per_pixel
                 measures['rms_dist'] = numpy.mean(rmsds) * self.microns_per_pixel
-        return [measures.get(feature, None) for feature in self.feature_names]
+        return [measures.get(feature, numpy.nan) for feature in self.feature_names]
 
 class FluorMeasurements:
     """Provide data columns based on a fluorescent images.
