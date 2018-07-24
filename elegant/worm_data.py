@@ -410,6 +410,31 @@ class Worm(object):
         ages, value = self.get_time_range(feature, age_feature=age_feature)
         return numpy.interp(age, ages, value)
 
+    def smooth_feature(self, feature, window_length=21/24, age_feature='age', min_age=-numpy.inf, max_age=numpy.inf):
+        """Smooth a feature by applying a causal moving average/box filter
+
+            window_length - Time to filter over (days)
+            min_age, max_age - Limits between which to perform filtering (timepoints)
+                outside this range, no filtering is performed....
+        """
+
+        ages, data = self.get_time_range(feature, age_feature=age_feature,filter_valid=False)
+
+        smoothed_feature = numpy.array([])
+        valid_mask = ~numpy.isnan(data)
+        ages_in_range = (ages <= max_age) & (ages >= min_age)
+        for present_age, present_data in zip(ages,data):
+            if (present_age <= max_age) and (present_age >= min_age):
+                centered_ages = ages - present_age
+                ages_to_smooth = (centered_ages <= window_length) & (centered_ages >= 0) & valid_mask & ages_in_range
+                smoothed_feature = numpy.append(smoothed_feature,
+                    data[ages_to_smooth].sum()/ages_to_smooth.sum())
+            else:
+                smoothed_feature = numpy.append(smoothed_feature,
+                    present_data)
+
+        setattr(self.td, 'smoothed_' + feature, smoothed_feature)
+
     def merge_with(self, other):
         """Merge summary and timecourse data with another worm.
 
