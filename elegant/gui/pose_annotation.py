@@ -6,9 +6,11 @@ import pkg_resources
 from PyQt5 import Qt
 import numpy
 
+from zplib.curve import interpolate
 from ris_widget.qwidgets import annotator
 
 from .spline_overlay import spline_outline
+import edge_detection
 
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
@@ -117,6 +119,11 @@ class PoseAnnotation(annotator.AnnotationField):
         lock_warp.toggled.connect(self.set_locked)
         self._add_row(layout, lock_warp, self.fine_mode, self.reverse_button)
 
+        self.edge_detection_button = Qt.QPushButton('Find Widths')
+        self.edge_detection_button.clicked.connect(self.find_edges)
+        self._add_row(layout, self.edge_detection_button)
+
+
     def _add_row(self, layout, *widgets):
         hbox = Qt.QHBoxLayout()
         hbox.setSpacing(self._hbox_spacing)
@@ -169,6 +176,18 @@ class PoseAnnotation(annotator.AnnotationField):
         self.outline.geometry = (center_tck, width_tck)
         self._enable_buttons()
 
+    def find_edges(self):
+        bright_field = self.ris_widget.image.data
+        center_tck = self.outline.center_spline.geometry
+        width_tck = self.outline.width_spline.geometry
+        avg_width_tck = self.get_default_widths()
+        new_center_tck, new_width_tck = edge_detection.edge_detection(bright_field, center_tck, width_tck, avg_width_tck)
+        mean_widths = self._get_default_width_profile()
+        if mean_widths is None:
+            return
+        smooth_width_tck = self._pca_smooth_widths(new_width_tck, mean_widths)
+        self._set_widths_with_notification(smooth_width_tck)
+
     def undo(self):
         if len(self.undo_stack) > 0:
             self.redo_stack.append(self.get_annotation())
@@ -212,6 +231,18 @@ class PoseAnnotation(annotator.AnnotationField):
 
     def set_widths_to_default(self):
         self._set_widths_with_notification(self.get_default_widths())
+
+    def _pca_smooth_widths(self, width_tck, mean_widths):
+        basis_shape = self.width_pca_basis.shape[1]
+        x = numpy.linspace(0, 1, basis_shape)
+        mean_shape = mean_widths.shape[0]
+        if mean_shape != basis_shape:
+            mean_widths = numpy.interp(x, numpy.linspace(0, 1, mean_shape), mean_widths)
+        widths = interpolate.spline_evaluate(width_tck, x)
+        pca_projection = numpy.dot(widths - mean_widths, self.width_pca_basis.T)
+        pca_reconstruction = mean_widths + numpy.dot(pca_projection, self.width_pca_basis)
+        smooth_width_tck = self.outline.width_spline.calculate_tck(pca_reconstruction, x)
+        return smooth_width_tck
 
     def pca_smooth_widths(self):
         if self.width_pca_basis is None:
