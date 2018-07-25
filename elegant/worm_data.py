@@ -468,18 +468,28 @@ class Worm(object):
             ours_in_other = numpy.in1d(self.td.timepoint, other.td.timepoint, assume_unique=True)
             other_in_ours = numpy.in1d(other.td.timepoint, self.td.timepoint, assume_unique=True)
             for feature in both:
-                our_v = getattr(self.td, feature)
-                other_v = getattr(other.td, feature)
-                if not numpy.all(our_v[ours_in_other] == other_v[other_in_ours]):
-                    raise ValueError(f'worms to be merged have different values of {feature} for some timepoints that are in common')
+                our_v = numpy.asarray(getattr(self.td, feature))
+                other_v = numpy.asarray(getattr(other.td, feature))
+                ours_good = ~numpy.isnan(our_v)
+                others_good = ~numpy.isnan(other_v)
+                if numpy.any((our_v[ours_in_other] != other_v[other_in_ours]) &
+                   ours_good[ours_in_other] & others_good[other_in_ours]):
+                    # if there are any data values that (a) overlap, (b) compare as unequal and (c) are both non-nan,
+                    # then we have a data conflict
+                    raise ValueError(f'worms have different values of "{feature}" for one or more of the timepoints that are in common')
                 new_values = numpy.empty(len_new, dtype=numpy.promote_types(our_v.dtype, other_v.dtype))
-                new_values[our_mask] = our_v
-                new_values[other_mask] = other_v
+                new_values.fill(numpy.nan)
+                take_from_ours = our_mask.copy()
+                take_from_ours[our_mask] = ours_good # set mask false where ours has nan
+                new_values[take_from_ours] = our_v[ours_good]
+                take_from_other = other_mask.copy()
+                take_from_other[other_mask] = others_good # set mask false where other has nan
+                new_values[take_from_other] = other_v[others_good]
                 setattr(self.td, feature, new_values)
         self.td.timepoint = new_timepoints
 
     def _convert_values(self, src_td, feature, len_new, mask):
-        values = getattr(src_td, feature)
+        values = numpy.asarray(getattr(src_td, feature))
         if values.dtype.kind in 'SU': # string dtype
             dtype = values.dtype
         else:
