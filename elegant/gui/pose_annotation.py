@@ -10,7 +10,7 @@ from zplib.curve import interpolate
 from ris_widget.qwidgets import annotator
 
 from .spline_overlay import spline_outline
-import edge_detection
+from .. import edge_detection
 
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
@@ -106,6 +106,12 @@ class PoseAnnotation(annotator.AnnotationField):
         self.pca_button.clicked.connect(self.pca_smooth_widths)
         self._add_row(layout, Qt.QLabel('Widths:'), self.default_button, self.pca_button)
 
+        self.auto_widths_button = Qt.QPushButton('Auto Widths')
+        self.auto_widths_button.clicked.connect(self.auto_widths)
+        self.auto_center_button = Qt.QPushButton('Auto Center-Widths')
+        self.auto_center_button.clicked.connect(self.auto_center)
+        self._add_row(layout, Qt.QLabel('Auto Find:'), self.auto_center_button, self.auto_widths_button)
+
         self.reverse_button = Qt.QPushButton('Reverse')
         self.reverse_button.clicked.connect(self.outline.reverse_spline)
         Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.outline.reverse_spline, context=Qt.Qt.ApplicationShortcut)
@@ -119,9 +125,7 @@ class PoseAnnotation(annotator.AnnotationField):
         lock_warp.toggled.connect(self.set_locked)
         self._add_row(layout, lock_warp, self.fine_mode, self.reverse_button)
 
-        self.edge_detection_button = Qt.QPushButton('Find Widths')
-        self.edge_detection_button.clicked.connect(self.find_edges)
-        self._add_row(layout, self.edge_detection_button)
+        
 
 
     def _add_row(self, layout, *widgets):
@@ -176,7 +180,21 @@ class PoseAnnotation(annotator.AnnotationField):
         self.outline.geometry = (center_tck, width_tck)
         self._enable_buttons()
 
-    def find_edges(self):
+    def auto_center(self):
+        bright_field = self.ris_widget.image.data
+        center_tck = self.outline.center_spline.geometry
+        width_tck = self.outline.width_spline.geometry
+        avg_width_tck = self.get_default_widths()
+        new_center_tck, new_width_tck = edge_detection.edge_detection(bright_field, center_tck, width_tck, avg_width_tck)
+        mean_widths = self._get_default_width_profile()
+        if mean_widths is None:
+            return
+        smooth_width_tck = self._pca_smooth_widths(new_width_tck, mean_widths)
+        #self._set_widths_with_notification(smooth_width_tck)
+        self.update_annotation((new_center_tck, smooth_width_tck))
+        self._update_widget(new_center_tck, smooth_width_tck)
+
+    def auto_widths(self):
         bright_field = self.ris_widget.image.data
         center_tck = self.outline.center_spline.geometry
         width_tck = self.outline.width_spline.geometry

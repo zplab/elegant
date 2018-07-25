@@ -61,9 +61,9 @@ def new_tcks(center_coordinates, width_coordinates, worm_image_shape, center_tck
     new_center_coordinates = worm_spline.coordinates_to_lab_frame(center_coordinates, worm_image_shape, center_tck)
     #generate new splines
     _,widths = width_coordinates.T
-    new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=0.4*len(new_center_coordinates))
+    new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=1*len(new_center_coordinates))
     x = np.linspace(0,1, len(widths))
-    new_width_tck = interpolate.fit_nonparametric_spline(x, widths, smoothing=0.4*len(new_center_coordinates))
+    new_width_tck = interpolate.fit_nonparametric_spline(x, widths, smoothing=1*len(new_center_coordinates))
 
     return(new_center_tck, new_width_tck)
 
@@ -101,9 +101,9 @@ def edge_coordinates(image, avg_width_tck):
 
     #NOTE: using the midpoint as the zero axis, we negate the bottom widths (hence, it is
     #negative here) ie. it becomes (top_widths + (-bottom_widths))
-    new_center = (top_widths-bottom_widths)/2 #find the midpoint between the two points
+    new_center = (bottom_widths-top_widths)/2 #find the midpoint between the two points
     #put the pixels in the same frame of reference as straightened worm
-    new_center = new_center + int(image.shape[1]/2)
+    new_center += int(image.shape[1]/2)
     new_widths = (top_widths+bottom_widths)/2#calculate the average widths
 
     center_coordinates = np.transpose([xt,new_center])
