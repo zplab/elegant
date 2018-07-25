@@ -413,10 +413,12 @@ class Worm(object):
     def merge_with(self, other):
         """Merge summary and timecourse data with another worm.
 
-        The other worm must have a matching name. If any data are in common
-        those data must match. Merging of timecourse data is supported in
-        all cases: when the timepoints completely or partially overlap, or are
-        disjoint.
+        Merging of timecourse data is supported in all cases: when the
+        timepoints completely or partially overlap, or are disjoint. The other
+        worm must have a matching name. If any timepoints are in common those
+        data must match. There is one exception: if one worm has
+        nan/empty-string values at a timepoint and another has
+        non-nan/empty-strings, the non-nan/empty values will be used.
 
         Note: only handles int/float/string data types. Any int data types will
         be converted to float in cases where timepoints do not fully overlap,
@@ -470,15 +472,16 @@ class Worm(object):
             for feature in both:
                 our_v = numpy.asarray(getattr(self.td, feature))
                 other_v = numpy.asarray(getattr(other.td, feature))
-                ours_good = ~numpy.isnan(our_v)
-                others_good = ~numpy.isnan(other_v)
+                ours_good = _valid_values(our_v)
+                others_good = _valid_values(other_v)
                 if numpy.any((our_v[ours_in_other] != other_v[other_in_ours]) &
                    ours_good[ours_in_other] & others_good[other_in_ours]):
                     # if there are any data values that (a) overlap, (b) compare as unequal and (c) are both non-nan,
                     # then we have a data conflict
                     raise ValueError(f'worms have different values of "{feature}" for one or more of the timepoints that are in common')
                 new_values = numpy.empty(len_new, dtype=numpy.promote_types(our_v.dtype, other_v.dtype))
-                new_values.fill(numpy.nan)
+                if numpy.issubdtype(new_values.dtype, numpy.floating):
+                    new_values.fill(numpy.nan)
                 take_from_ours = our_mask.copy()
                 take_from_ours[our_mask] = ours_good # set mask false where ours has nan
                 new_values[take_from_ours] = our_v[ours_good]
@@ -500,6 +503,15 @@ class Worm(object):
             new_values[~mask] = numpy.nan
         setattr(self.td, feature, new_values)
 
+def _valid_values(array):
+    if numpy.issubdtype(array.dtype, numpy.floating):
+        return ~numpy.isnan(array)
+    elif array.dtype.kind == 'S':
+        return array != b''
+    elif array.dtype.kind == 'U':
+        return array != ''
+    else:
+        return numpy.ones(array.shape, dtype=bool)
 
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
