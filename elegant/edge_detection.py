@@ -1,4 +1,4 @@
-import numpy as np
+import numpy
 import pickle
 
 from scipy import ndimage
@@ -15,7 +15,7 @@ from elegant import worm_spline
 
 """mean, pcs, norm_pcs, variances, total_variance,positions, norm_positions = pickle.load(open('/mnt/lugia_array/data/human_masks/warped_splines/pca_stuff.p', 'rb'))
 avg_width_positions = pca.pca_reconstruct([0,0,0], pcs[:3], mean)
-avg_width_tck = interpolate.fit_nonparametric_spline(np.linspace(0,1, len(avg_width_positions)), avg_width_positions)"""
+avg_width_tck = interpolate.fit_nonparametric_spline(numpy.linspace(0,1, len(avg_width_positions)), avg_width_positions)"""
 
 def edge_detection(image, center_tck, width_tck, avg_width_tck):
     """Main function to detect the edges of the worm. Returns a new center_tck
@@ -62,7 +62,7 @@ def new_tcks(center_coordinates, width_coordinates, worm_image_shape, center_tck
     #generate new splines
     _,widths = width_coordinates.T
     new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=1*len(new_center_coordinates))
-    x = np.linspace(0,1, len(widths))
+    x = numpy.linspace(0,1, len(widths))
     new_width_tck = interpolate.fit_nonparametric_spline(x, widths, smoothing=1*len(new_center_coordinates))
 
     return(new_center_tck, new_width_tck)
@@ -85,13 +85,13 @@ def edge_coordinates(image, avg_width_tck):
             in the worm fram of reference
     """
     #break up the image into top and bottom parts to find the widths on each side
-    top_image = np.flip(image[:,:int(image.shape[1]/2)], axis =1)
+    top_image = numpy.flip(image[:,:int(image.shape[1]/2)], axis =1)
     bottom_image = image[:,int(image.shape[1]/2):]
     xt, top_widths = find_edges(top_image, avg_width_tck)
     xb, bottom_widths = find_edges(bottom_image, avg_width_tck)
 
-    top_widths = top_widths.astype(np.float)
-    bottom_widths = bottom_widths.astype(np.float)
+    top_widths = top_widths.astype(numpy.float)
+    bottom_widths = bottom_widths.astype(numpy.float)
 
     #need to account for the top and bottom splitting sincethe centerline is exactly 
     #in the middle of the pixels, we need to add 0.5 to the widths
@@ -106,8 +106,8 @@ def edge_coordinates(image, avg_width_tck):
     new_center += int(image.shape[1]/2)
     new_widths = (top_widths+bottom_widths)/2#calculate the average widths
 
-    center_coordinates = np.transpose([xt,new_center])
-    width_coordinates = np.transpose([xt,new_widths])
+    center_coordinates = numpy.transpose([xt,new_center])
+    width_coordinates = numpy.transpose([xt,new_widths])
 
     return (center_coordinates, width_coordinates)
 
@@ -132,9 +132,9 @@ def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2,
     image_down = pyramid.pyr_down(image, downscale=2)
 
     #get the gradient
-    gradient = ndimage.filters.gaussian_gradient_magnitude(image_down, 1)
-    top_ten = np.percentile(gradient,  61)
-    gradient = sigmoid(gradient, gradient.min(), top_ten, gradient.max(), 2)
+    gradient = ndimage.filters.gaussian_gradient_magnitude(image_down, ggm_sigma)
+    top_ten = numpy.percentile(gradient,  sig_per)
+    gradient = sigmoid(gradient, gradient.min(), top_ten, gradient.max(), sig_growth_rate)
     gradient = gradient.max()-abs(gradient)
 
     #penalize finding edges near the centerline or outside of the avg_width_tck
@@ -142,8 +142,8 @@ def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2,
     #Need to divide by 2 because of the downsampling
     pen_widths = (interpolate.spline_interpolate(avg_width_tck, image_down.shape[0]))
     #pen_widths = pen_widths/2
-    distance_matrix = abs(np.subtract.outer(pen_widths, np.arange(0, image_down.shape[1])))
-    #distance_matrix = np.flip(abs(np.subtract.outer(pen_widths, np.arange(0, image_down.shape[1]))), 1)
+    distance_matrix = abs(numpy.subtract.outer(pen_widths, numpy.arange(0, image_down.shape[1])))
+    #distance_matrix = numpy.flip(abs(numpy.subtract.outer(pen_widths, numpy.arange(0, image_down.shape[1]))), 1)
     penalty = alpha*(distance_matrix)
     new_costs = gradient+penalty
     
@@ -161,7 +161,7 @@ def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2,
     mcp.find_costs([start], [end])
     route = mcp.traceback(end)
 
-    x,y = np.transpose(route)
+    x,y = numpy.transpose(route)
     #print("x: ", len(x), "y:", len(y))
     #print(route)
     #y = image_down.shape[1] - y
@@ -178,14 +178,14 @@ def sigmoid(gradient, min, mid, max, growth_rate):
         max: upper asymptote
         growth_rate: growth rate of the sigmoid function
     '''
-    return min+((max-min)/(1+np.exp(-(growth_rate)*(gradient-mid))))
+    return min+((max-min)/(1+numpy.exp(-(growth_rate)*(gradient-mid))))
 
 def scale_image(image):
-    mode = np.bincount(image.flat)[1:].argmax()+1
-    bf = image.astype(np.float32)
+    mode = numpy.bincount(image.flat)[1:].argmax()+1
+    bf = image.astype(numpy.float32)
     bf -= 200
     bf *= (24000-200) / (mode-200)
-    bf8 = colorize.scale(bf, min=600, max=26000, gamma=0.72, output_max=255).astype(np.float32)
+    bf8 = colorize.scale(bf, min=600, max=26000, gamma=0.72, output_max=255)
     return bf8
 
 class Smooth_MCP(graph.MCP_Flexible):
@@ -199,5 +199,5 @@ class Smooth_MCP(graph.MCP_Flexible):
     def travel_cost(self, old_cost, new_cost, offset_length):
         """Override method to smooth out the traceback
         """
-
-        return self.alpha*(new_cost + abs(offset_length)) 
+        penalty = 1 if offset_length == 1 else self.alpha
+        return new_cost*penalty 

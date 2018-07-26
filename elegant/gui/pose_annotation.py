@@ -106,9 +106,9 @@ class PoseAnnotation(annotator.AnnotationField):
         self.pca_button.clicked.connect(self.pca_smooth_widths)
         self._add_row(layout, Qt.QLabel('Widths:'), self.default_button, self.pca_button)
 
-        self.auto_widths_button = Qt.QPushButton('Auto Widths')
+        self.auto_widths_button = Qt.QPushButton('Widths')
         self.auto_widths_button.clicked.connect(self.auto_widths)
-        self.auto_center_button = Qt.QPushButton('Auto Center-Widths')
+        self.auto_center_button = Qt.QPushButton('Center-Widths')
         self.auto_center_button.clicked.connect(self.auto_center)
         self._add_row(layout, Qt.QLabel('Auto Find:'), self.auto_center_button, self.auto_widths_button)
 
@@ -124,9 +124,6 @@ class PoseAnnotation(annotator.AnnotationField):
         lock_warp.setChecked(False)
         lock_warp.toggled.connect(self.set_locked)
         self._add_row(layout, lock_warp, self.fine_mode, self.reverse_button)
-
-        
-
 
     def _add_row(self, layout, *widgets):
         hbox = Qt.QHBoxLayout()
@@ -181,20 +178,15 @@ class PoseAnnotation(annotator.AnnotationField):
         self._enable_buttons()
 
     def auto_center(self):
-        bright_field = self.ris_widget.image.data
-        center_tck = self.outline.center_spline.geometry
-        width_tck = self.outline.width_spline.geometry
-        avg_width_tck = self.get_default_widths()
-        new_center_tck, new_width_tck = edge_detection.edge_detection(bright_field, center_tck, width_tck, avg_width_tck)
-        mean_widths = self._get_default_width_profile()
-        if mean_widths is None:
-            return
-        smooth_width_tck = self._pca_smooth_widths(new_width_tck, mean_widths)
-        #self._set_widths_with_notification(smooth_width_tck)
-        self.update_annotation((new_center_tck, smooth_width_tck))
-        self._update_widget(new_center_tck, smooth_width_tck)
+        new_center_tck, new_width_tck = self._find_widths()
+        self.update_annotation((new_center_tck, new_width_tck))
+        self._update_widget(new_center_tck, new_width_tck)
 
     def auto_widths(self):
+        new_center_tck, new_width_tck = self._find_widths()
+        self._set_widths_with_notification(new_width_tck)
+
+    def _find_widths(self):
         bright_field = self.ris_widget.image.data
         center_tck = self.outline.center_spline.geometry
         width_tck = self.outline.width_spline.geometry
@@ -204,7 +196,7 @@ class PoseAnnotation(annotator.AnnotationField):
         if mean_widths is None:
             return
         smooth_width_tck = self._pca_smooth_widths(new_width_tck, mean_widths)
-        self._set_widths_with_notification(smooth_width_tck)
+        return new_center_tck, smooth_width_tck
 
     def undo(self):
         if len(self.undo_stack) > 0:
@@ -268,15 +260,7 @@ class PoseAnnotation(annotator.AnnotationField):
         mean_widths = self._get_default_width_profile()
         if mean_widths is None:
             return
-        basis_shape = self.width_pca_basis.shape[1]
-        x = numpy.linspace(0, 1, basis_shape)
-        mean_shape = mean_widths.shape[0]
-        if mean_shape != basis_shape:
-            mean_widths = numpy.interp(x, numpy.linspace(0, 1, mean_shape), mean_widths)
-        widths = self.outline.width_spline.evaluate_tck(x)
-        pca_projection = numpy.dot(widths - mean_widths, self.width_pca_basis.T)
-        pca_reconstruction = mean_widths + numpy.dot(pca_projection, self.width_pca_basis)
-        width_tck = self.outline.width_spline.calculate_tck(pca_reconstruction, x)
+        width_tck = _pca_smooth_widths(self.outline.width_spline.geometry, mean_widths)
         self._set_widths_with_notification(width_tck)
 
     def draw_centerline(self, draw):
