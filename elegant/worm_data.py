@@ -1184,7 +1184,8 @@ class Worms(collections.UserList):
             out.append((x, y, color))
         return out
 
-    def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+    def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf,
+        age_feature='age', time_units='hours'):
         """Plot values of a given feature for each worm, colored by lifespan.
 
         Parameters:
@@ -1202,11 +1203,16 @@ class Worms(collections.UserList):
                 also be used. If this is a function, it will be called as
                 age_feature(worm) to generate the ages to examine (see
                 examples in Worm.get_time_range).
+            time_units: one of "days", "hours", "minutes", or "seconds",
+                representing the units in which the time scale should be plotted.
         """
         import matplotlib.pyplot as plt
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         plt.clf()
         for x, y, c in self._timecourse_plot_data(feature, min_age, max_age, age_feature):
-            plt.plot(x, y, color=c)
+            plt.plot(x/time_scale, y, color=c)
 
 class _TimecourseData(object):
     def __repr__(self):
