@@ -179,7 +179,7 @@ class PoseAnnotation(annotator.AnnotationField):
 
     def auto_center(self):
         new_center_tck, new_width_tck = self._find_widths()
-        self.update_annotation((new_center_tck, new_width_tck))
+        self.on_geometry_change((new_center_tck, new_width_tck))
         self._update_widget(new_center_tck, new_width_tck)
 
     def auto_widths(self):
