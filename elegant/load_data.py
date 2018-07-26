@@ -41,11 +41,15 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
             This function takes the position name and the timepoint name, and
             returns True or False, depending on whether to load those images.
             This can be used to only load a range of positions or timepoints.
+            If no timepoints pass the filter for a given position, then that
+            position will not be present in the returned dictionary.
         image_ext: the image filename extension.
 
     Returns: an ordered dictionary mapping position names to position dicts,
         where each position dict is another ordered dictionary mapping timepoint
         names to a list of image files, one image file per channel requested.
+        Positions with no timepoints, or whose timepoints were all excluded by
+        the filter, will not be present in the dictionary.
 
     Examples of using timepoint_filter:
 
@@ -65,8 +69,8 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
         files = scan_experiment_directory(experiment_root, timepoint_filter=timepoint_filter)
 
     For simplicity, this last example is also pre-packaged into the
-    scan_good_positions() function:
-        files = scan_good_positions('path/to/experiment', filter_excluded)
+    scan_positions() function:
+        files = scan_positions('path/to/experiment', filter_excluded)
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = collections.OrderedDict()
@@ -86,6 +90,9 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
                     raise RuntimeError('File not found: '.format(str(image_path)))
                 channel_images.append(image_path)
             timepoints[timepoint_name] = channel_images
+    for position_name, timepoints in list(positions.items()):
+        if len(timepoints) == 0:
+            del positions
     return positions
 
 def scan_positions(experiment_root, position_filter, channels='bf', image_ext='png'):
@@ -108,7 +115,7 @@ def scan_positions(experiment_root, position_filter, channels='bf', image_ext='p
 
     Example:
     To load only positions that weren't previously annotated as "exclude":
-        files = scan_good_positions('path/to/experiment', filter_excluded)
+        files = scan_positions('path/to/experiment', filter_excluded)
     """
     positions = read_annotations(experiment_root)
     selected_positions = filter_annotations(positions, position_filter)
