@@ -424,9 +424,10 @@ class Worm(object):
         valid_mask = ~numpy.isnan(data)
         ages_in_range = (ages <= max_age) & (ages >= min_age)
         for present_age, present_data in zip(ages,data):
-            if (present_age <= max_age) and (present_age >= min_age):
-                centered_ages = ages - present_age
-                ages_to_smooth = (centered_ages <= window_length) & (centered_ages >= 0) & valid_mask & ages_in_range
+            if (present_age <= max_age) and (present_age >= min_age) and ~numpy.isnan(present_data):
+                # isnan handles the last timepoint before death; TODO: ask Zach if better way to handle.
+                centered_ages = ages - present_age # Times prior to this age are negative
+                ages_to_smooth = (centered_ages >= -1*window_length) & (centered_ages <= 0) & valid_mask & ages_in_range
                 smoothed_feature = numpy.append(smoothed_feature,
                     data[ages_to_smooth].sum()/ages_to_smooth.sum())
             else:
