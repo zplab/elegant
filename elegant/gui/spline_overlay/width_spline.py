@@ -151,7 +151,6 @@ class WidthSpline(center_spline.CenterSpline, Qt.QGraphicsPathItem):
         if self._warp_start > centerline_y:
             displacement *= -1
         displacements = displacement * warp_coefficients
-        displacements[displacements**2 < 4] = 0
         self._points = numpy.maximum(self._warp_points + displacements, 0.1)
         self._generate_tck_from_points()
 

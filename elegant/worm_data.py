@@ -10,8 +10,10 @@ from zplib.scalar_stats import regress
 from zplib.image import colorize
 from zplib import datafile
 
+TIME_UNITS = dict(days=24, hours=1, minutes=1/60, seconds=1/3600)
+
 def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
-    calculate_lifespan=True, last_timepoint_is_first_dead=True, age_scale=1):
+    calculate_lifespan=True, last_timepoint_is_first_dead=True, time_units='hours'):
     """Read worm data files into a Worms object.
 
     Each file can be either a single-worm file (where the "timepoint" identifier
@@ -63,10 +65,13 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
             last time the worm was known to be alive. Only used when lifespans
             are auto-calculated and when there are no 'timestamp' and 'stage'
             columns.
-        age_scale: scale-factor for the ages/spans read in. The values in the "age"
-            column and any column ending in "_age" will be multiplied by this
-            scalar. Likewise for any summary columns ending in "span".
-            (This is useful e.g. for converting hours to days.)
+        time_units: the unit of time for the values in the "age" column and any
+            column ending in "_age". This unit will also be used for summary
+            columns ending in "span". All time units will be converted into
+            hours internally. (The rescale_time() method can be used to
+            change units later, but this is at your own risk: all time-based
+            analysis code can and should assume time units of hours.)
+            Must be one of 'days', 'hours', 'minutes', or 'seconds'.
 
     Returns: Worms object, sorted by lifespan (if possible)
 
@@ -89,7 +94,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
             else:
                 prefix = name_prefix
             for name, header, data in _read_datafile(path, prefix, delimiter):
-                worms.append(Worm(name, header, data, age_scale))
+                worms.append(Worm(name, header, data, time_units))
     if isinstance(summary_globs, (str, pathlib.Path)):
         summary_globs = [summary_globs]
     elif summary_globs is None:
@@ -99,7 +104,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
         if len(paths) == 0:
             raise FileNotFoundError(f'"{path_glob}" matches no files.')
         for path in paths:
-            worms.read_summary_data(path, delimiter=delimiter, span_scale=age_scale)
+            worms.read_summary_data(path, delimiter=delimiter, time_units=time_units)
 
     if calculate_lifespan and not all(hasattr(w, 'lifespan') for w in worms):
         if all(hasattr(w.td, 'timepoint') and hasattr(w.td, 'stage') for w in worms):
@@ -217,7 +222,7 @@ class Worm(object):
     Convenience accessor functions for getting a range of timecourse measurements
     are provided.
     """
-    def __init__(self, name, feature_names=[], timepoint_data=[], age_scale=1):
+    def __init__(self, name, feature_names=[], timepoint_data=[], time_units='hours'):
         """It is generally preferable to construct worms from a factory function
         such as read_worms or meta_worms, rather than using the constructor.
 
@@ -226,13 +231,22 @@ class Worm(object):
             feature_names: names of the timecourse features measured for
                 this animal
             timepoint_data: for each timepoint, each of the measured features.
-            age_scale: scale-factor for the ages read in. The values in the
-                "age" column and any column ending in '_age' will be multiplied
-                by this scalar. (Useful e.g. for converting hours to days.)
+            time_units: the unit of time for the values in the "age" column and
+                any column ending in "_age". This unit will also be used for
+                summary columns ending in "span". All time units will be
+                converted into hours internally. (The rescale_time() method
+                can be used to change units later, but this is at your own
+                risk: all time-based analysis code can and should assume time
+                units of hours.)
+                Must be one of 'days', 'hours', 'minutes', or 'seconds'.
+
         """
         self.name = name
         self.td = _TimecourseData()
         vals_for_features = [[] for _ in feature_names]
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         for timepoint in timepoint_data:
             # add each entry in the timepoint data to the corresponding list in
             # vals_for_features
@@ -243,8 +257,25 @@ class Worm(object):
         for feature_name, feature_vals in zip(feature_names, vals_for_features):
             arr = numpy.array(feature_vals)
             if feature_name == 'age' or feature_name.endswith('_age'):
-                arr *= age_scale
+                arr *= time_scale
             setattr(self.td, feature_name, arr)
+
+    def rescale_time(self, time_scale):
+        """Rescale all timecourse and summary features by a given factor.
+
+        The "age" timecourse feature and all others ending in "_age", and any
+        summary feature ending in "span" will be multiplied by the provided
+        time_scale parameter.
+
+        Use carefully: all functions that care about the absolute time scale
+        will assume that time is scaled in hours.
+        """
+        for feature_name, feature_vals in self.td._items():
+            if feature_name == 'age' or feature_name.endswith('_age'):
+                setattr(self.td, feature_name, numpy.asarray(feature_vals) * time_scale)
+        for feature_name, feature_val in self.__dict__.items():
+            if feature_name.endswith('span'):
+                setattr(self, feature_name, feature_val * time_scale)
 
     def calculate_lifespan_simple(self, last_timepoint_is_first_dead=True):
         """Calculate the lifespan of each animal using a simplistic method.
@@ -604,7 +635,7 @@ class Worms(collections.UserList):
         else:
             return self.data[i]
 
-    def read_summary_data(self, path, add_new=False, delimiter='\t', span_scale=1):
+    def read_summary_data(self, path, add_new=False, delimiter='\t', time_units='hours'):
         """Read in summary data (not timecourse data) for each worm.
 
         Summary statistics are read from columns in a delimited text file and
@@ -619,10 +650,17 @@ class Worms(collections.UserList):
                 does not match any existing worm names, create a new worm and
                 add it to this Worms list. If False, print a warning and ignore.
             delimiter: delimiter for input data file.
-            span_scale: if any data column name ends with 'span', the value will
-                be multiplied by span_scale. (Useful e.g. for converting hours
-                into days.)
+            time_units: the unit of time for the values in any column with a
+                name ending in 'span'. All time units will be converted into
+                hours internally. (The rescale_time() method can be used to
+                change units later, but this is at your own risk: all
+                time-based analysis code can and should assume time units of
+                hours.)
+                Must be one of 'days', 'hours', 'minutes', or 'seconds'.
         """
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         named_worms = {worm.name: worm for worm in self}
         header, data = datafile.read_delimited(path, delimiter=delimiter)
         header = [colname.replace(' ', '_') for colname in header]
@@ -638,7 +676,7 @@ class Worms(collections.UserList):
                 worm = named_worms[name]
             for feature, val in zip(header[1:], rest):
                 if feature.endswith('span'):
-                    val *= span_scale
+                    val *= time_scale
                 setattr(worm, feature, val)
 
     def write_summary_data(self, path, features=None, delimiter='\t', error_on_missing=True):
@@ -1210,7 +1248,8 @@ class Worms(collections.UserList):
             out.append((x, y, color))
         return out
 
-    def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+    def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf,
+        age_feature='age', time_units='hours'):
         """Plot values of a given feature for each worm, colored by lifespan.
 
         Parameters:
@@ -1228,11 +1267,16 @@ class Worms(collections.UserList):
                 also be used. If this is a function, it will be called as
                 age_feature(worm) to generate the ages to examine (see
                 examples in Worm.get_time_range).
+            time_units: one of "days", "hours", "minutes", or "seconds",
+                representing the units in which the time scale should be plotted.
         """
         import matplotlib.pyplot as plt
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         plt.clf()
         for x, y, c in self._timecourse_plot_data(feature, min_age, max_age, age_feature):
-            plt.plot(x, y, color=c)
+            plt.plot(x/time_scale, y, color=c)
 
 class _TimecourseData(object):
     def __repr__(self):
