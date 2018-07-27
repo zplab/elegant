@@ -75,7 +75,7 @@ class PoseAnnotation(annotator.AnnotationField):
         self.show_centerline.toggled.connect(self.show_or_hide_centerline)
         self.show_outline = Qt.QCheckBox('Outline')
         self.show_outline.setChecked(True)
-        self.show_outline.toggled.connect(self.outline.setVisible)
+        self.show_outline.toggled.connect(self.show_or_hide_outline)
         self._add_row(layout, Qt.QLabel('Show:'), self.show_centerline, self.show_outline)
 
         self.undo_button = Qt.QPushButton('Undo')
@@ -288,6 +288,7 @@ class PoseAnnotation(annotator.AnnotationField):
         self._enable_buttons()
 
     def show_or_hide_centerline(self, show):
+        # 1: For the lab frame of reference:
         # if show, then show the centerline.
         # if not, then only show if there is *no* centerline set: this way,
         # the line will be shown during manual drawing but hid once that line
@@ -296,9 +297,14 @@ class PoseAnnotation(annotator.AnnotationField):
             self.outline.center_spline.setPen(self.outline.center_spline.display_pen)
         else:
             # "hide" by setting transparent pen. This still allows for dragging
-            # the hidden outline -- which using its hide() method prevents.
+            # the hidden outline -- which using its setVisible method prevents.
             self.outline.center_spline.setPen(Qt.QPen(Qt.Qt.transparent))
+        # 2: hide or show midline in worm frame of reference
+        self.outline.width_spline.midline.setVisible(show)
 
+    def show_or_hide_outline(self, show):
+        self.outline.setVisible(show) # in lab frame of reference
+        self.outline.width_spline.setVisible(show) # in worm frame
 
 def calculate_temp_factor(experiment_temperature, ref_temperature):
     # Average developmental-timing factors from Table 2 of Byerly, Cassada and Russell 1976
