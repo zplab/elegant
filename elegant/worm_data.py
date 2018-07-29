@@ -441,6 +441,41 @@ class Worm(object):
         ages, value = self.get_time_range(feature, age_feature=age_feature)
         return numpy.interp(age, ages, value)
 
+    def smooth_feature(self, feature, filter_type, age_feature='age', min_age=-numpy.inf, max_age=numpy.inf, **filter_params):
+        """Smooth a feature with a prescribed filter
+
+            Parameters
+                feature - feature to filter over
+                filter_type - str corresponding to the filter to be applied ('gaussian', 'uniform'),
+                    or a callable with the call signature smoothing_filter(time,data)
+                age_feature: the name of the feature to use to determine the age
+                    window (as used by get_time_range).
+                min_age, max_age - Limits between which to perform filtering;
+                    outside this range, no filtering is performed.
+                **filter_params - Additional parameters passed to _make_smoothing_filter
+                    to create filter.
+
+            The smoothed feature is the same size as the original feature and is
+                stored in the td attribute "smoothed_(feature)".
+        """
+
+        if callable(filter_type):
+            smoothing_filter = filter_type
+        else:
+            smoothing_filter = _make_smoothing_filter(filter_type, **filter_params)
+
+        ages, data = self.get_time_range(feature, age_feature=age_feature, min_age=min_age, max_age=max_age, filter_valid=True) # No nans here
+        smoothed_values = numpy.array([])
+        for present_age in ages:
+            centered_ages = present_age - ages # Times prior to this age are positive
+            smoothed_values = numpy.append(smoothed_values, smoothing_filter(centered_ages, data))
+
+        age_mask = numpy.isin(getattr(self.td, age_feature), ages)
+        smoothed_feature = getattr(self.td, feature).copy()
+        smoothed_feature[age_mask] = smoothed_values
+
+        setattr(self.td, 'smoothed_' + feature, smoothed_feature)
+
     def merge_with(self, other):
         """Merge summary and timecourse data with another worm.
 
@@ -543,6 +578,38 @@ def _valid_values(array):
         return array != ''
     else:
         return numpy.ones(array.shape, dtype=bool)
+
+def _make_smoothing_filter(filter_type, **filter_params):
+    '''Generates a causal smoothing filter (i.e. one that only smooths over past values in data)
+
+        Parameters
+            filter_type - str corresponding to the filter to be made ('gaussian', 'uniform')
+            **filter_params - parameters for the specified filter; these include:
+
+                window_length - required parameter for either filter (used for the gaussian to truncate it)
+                sigma - used only for gaussian filters
+
+        Returns
+            The generated filter will have call signature filter(time, data)
+            where: (1) time has been previously centered so that t=0 represents
+            the current timepoint and positive values of time correspond to past data,
+            and (2) data contains values to smooth over.
+    '''
+
+    def gaussian_filter(time, data, window_length, sigma):
+        smoothing_mask = (time>=0) & (time <= window_length)
+        t = time[smoothing_mask]
+        return numpy.dot(1/numpy.exp(-t**2/(2*sigma)).sum() * numpy.exp(-t**2/(2*sigma)), data[smoothing_mask])
+    def uniform_filter(time, data, window_length):
+        smoothing_mask = (time>=0) & (time <= window_length)
+        return numpy.dot(smoothing_mask/smoothing_mask.sum(),data)
+
+    filters = {'gaussian': gaussian_filter,
+        'uniform': uniform_filter}
+
+    def smoothing_filter(time, data):
+        return filters[filter_type](time, data, **filter_params)
+    return smoothing_filter
 
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
