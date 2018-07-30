@@ -451,35 +451,47 @@ class Worm(object):
         of the data points previous to each current point. (I.e. these will be
         "causal" filters that do not incorporate future data.)
 
+        For each timepoint in the selected time range, the filter function will
+        be called as filter(ages, age_to_smooth, **filter_params), where the
+        ages parameter contains the age at which each data point was acquired,
+        and the age_to_smooth parameter is the particular age at to get a
+        smoothed value for. The smoothing filter then chooses how to weight
+        each data point based on its temporal distance from the age under
+        consideration. The smoothing filter returns the weights for each
+        timepoint in the range, and a weighted average of the data in that
+        range is calculated.
+
         The resulting smoothed data will be stored in a td attribute with the
         name "smoothed_{feature}". Data points outside the provided time range
         will be un-smoothed in this output.
 
         Parameters:
             feature: feature to filter over
-            filter: a smoothing filter that will be called as filter(time, data)
-                Use of the pre-defined gaussian_filter and uniform_filter
-                functions is encouraged.
+            filter: a smoothing filter that will be called as
+                filter(ages, age_to_smooth). Use of the pre-defined
+                gaussian_filter and uniform_filter functions is encouraged.
             age_feature: the name of the feature to use to determine the age
                 window (as used by get_time_range).
             min_age, max_age: Limits between which to perform filtering;
                 outside this range, no filtering is performed.
             **filter_params: Additional parameters passed to the filter function.
-                In particular, uniform_filter requires a "window_length"
+                In particular, uniform_filter requires a "window_size"
                 parameter, which defines the temporal window size that the filter
                 averages over. The gaussian_filter function requires a "sigma"
                 parameter giving the temporal standard deviation; it also takes
-                an optional "window_length" parameter.
+                an optional "window_size" parameter.
         """
         ages, data = self.get_time_range(feature, age_feature=age_feature,
             min_age=min_age, max_age=max_age, filter_valid=True) # No nans here
         smoothed = []
-        for present_age in ages:
-            centered_ages = present_age - ages # Times prior to this age are positive
-            smoothed.append(filter(centered_ages, data, **filter_params))
-
+        for age_to_smooth in ages:
+            weights = filter(ages, age_to_smooth, **filter_params)
+            total_weight = weights.sum()
+            if total_weight == 0:
+                raise ValueError('Smoothing filter did not weight any data.')
+            smoothed.append(numpy.dot(data, weights / total_weight))
         age_mask = numpy.isin(getattr(self.td, age_feature), ages)
-        smoothed_feature = getattr(self.td, feature).copy()
+        smoothed_feature = numpy.array(getattr(self.td, feature))
         smoothed_feature[age_mask] = smoothed
         setattr(self.td, 'smoothed_' + feature, smoothed_feature)
 
@@ -586,20 +598,40 @@ def _valid_values(array):
     else:
         return numpy.ones(array.shape, dtype=bool)
 
-def gaussian_filter(time, data, sigma, window_length=numpy.inf):
-    smoothing_mask = (time >= 0) & (time <= window_length)
-    num_valid = smoothing_mask.sum()
-    if num_valid == 0:
-        raise ValueError('No data in window to smooth')
-    t = time[smoothing_mask]
-    return numpy.dot(1/numpy.exp(-t**2/(2*sigma)).sum() * numpy.exp(-t**2/(2*sigma)), data[smoothing_mask])
+def gaussian_filter(ages, age_to_smooth, sigma, window_size=numpy.inf):
+    """Gaussian-weighted smoothing filter (Causal: does not use future data).
 
-def uniform_filter(time, data, window_length):
-    smoothing_mask = (time >= 0) & (time <= window_length)
-    num_valid = smoothing_mask.sum()
-    if num_valid == 0:
-        raise ValueError('No data in window to smooth')
-    return numpy.dot(smoothing_mask/num_valid, data)
+    The filter returns the weights for each entry in the ages input, for the
+    given age_to_smooth.
+
+    Parameters:
+        ages: ages of the worm at each timepoint
+        age_to_smooth: age for which to calculate the smoothing weights.
+        sigma: temporal sigma for smoothing.
+        window_size: if specified, the number of hours in the past that should
+            be used in the weighting at all. (I.e. if specified, the result will
+            be a truncated gaussian weighting.)
+    """
+    time_delta = ages - age_to_smooth
+    weights = numpy.exp(-time_delta**2/(2*sigma))
+    ignore = (time_delta > 0) | (time_delta < -window_size)
+    weights[ignore] = 0
+    return weights
+
+def uniform_filter(ages, age_to_smooth, window_size):
+    """Uniform-weighted smoothing filter (Causal: does not use future data).
+
+    The filter returns a uniform (boxcar) filter over a specified range of past
+    data. That is, the smoothed value will simply be the (unweighted) average of
+    all the data point within the given window.
+
+    Parameters:
+        ages: ages of the worm at each timepoint
+        age_to_smooth: age for which to calculate the smoothing weights.
+        window_size: The number of hours in the past that should be averaged over.
+    """
+    time_delta = ages - age_to_smooth
+    return (time_delta <= 0) & (time_delta >= -window_size)
 
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
