@@ -3,12 +3,12 @@ import shutil
 import json
 import datetime
 
-import numpy as np
+import numpy
 
 from zplib import datafile
 from elegant import load_data
 
-def remove_timepoint(experiment_root, position, timepoint, dry_run=False):
+def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=False):
     '''Removes all memory of a given timepoint for a given position (files, metadata, annotations entries)
 
     Parameters
@@ -18,7 +18,7 @@ def remove_timepoint(experiment_root, position, timepoint, dry_run=False):
         dry_run - bool flag that toggles taking action (if False, only specifies when offending files are found)
     '''
 
-    if type(experiment_root) is str: experiment_root = pathlib.Path(experiment_root)
+    experiment_root = pathlib.Path(experiment_root)
 
     [im_file for img_file in (experiment_root / position).iterdir() if timepoint in str(im_file.name)]
     if len(offending_files) > 0:
@@ -47,7 +47,7 @@ def remove_timepoint(experiment_root, position, timepoint, dry_run=False):
                 load_data.write_annotation_file(position_annotation_file,
                     general_annotations, timepoint_annotations)
 
-def purge_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
+def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     '''Removes information about a timepoint from all positions in an experiment (as well as experiment_metadata)
 
     This function is useful for when a data for an entire timepoint is totally unusable
@@ -59,7 +59,9 @@ def purge_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
         dry_run - bool flag that toggles taking action (if False, only specifies when offending files are found)
     '''
 
-    positions = [sub_dir.name for sub_dir in sorted(experiment_root.iterdir()) if sub_dir.name.isnumeric()]
+    experiment_root = pathlib.Path(experiment_root)
+    positions = sorted(experiment_root.glob('*/position_metadata.json'))
+
     for position in positions:
         remove_timepoint(experiment_root, position, timepoint, dry_run=dry_run)
 
@@ -82,40 +84,46 @@ def purge_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     except:  # Offending timepoint didn't make it into metadata
         pass
 
-def remove_dead_timepoints(experiment_root, postmortem_time, delete_excluded=False):
-    '''Deletes excess timepoints in an experiment where worms are dead
+def remove_excluded_positions(experiment_root):
+    '''Deletes excluded positions from an experiment directory
 
     Parameters
         experiment_root - str/pathlib.Path to experiment
-        postmortem_time - Number of hours of data to keep past the annotated death timepoint;
-            useful for keeping extra timepoints in case one ever wants to validate
-            death for the previously made annotations
-        delete_excluded - bool flag for whether to delete excluded positions; if True
-            deletes folders for each position, but keeps the relevant annotation as a
-            record of what happened at that position
     '''
 
     experiment_root = pathlib.Path(experiment_root)
     annotations = load_data.read_annotations(experiment_root)
     good_annotations = load_data.filter_annotations(annotations, load_data.filter_excluded)
+    excluded_positions = sorted(set(annotations.keys()).difference(set(good_annotations.keys())))
+    for position in excluded_positions:
+        if (experiment_root / position).exists():
+            shutil.rmtree(str(experiment_root / position))
 
-    if delete_excluded:
-        excluded_positions = sorted(set(annotations.keys()).difference(set(good_annotations.keys())))
-        for position in excluded_positions:
-            if (experiment_root / position).exists():
-                shutil.rmtree(str(experiment_root / position))
+def remove_dead_timepoints(experiment_root, postmortem_timepoints):
+    '''Deletes excess timepoints in an experiment where worms are dead
+
+    Parameters
+        experiment_root - str/pathlib.Path to experiment
+        postmortem_time - Number of timepoints to keep past the annotated death timepoint;
+            useful for keeping extra timepoints in case one ever wants to validate
+            death for the previously made annotations; postmortem_timepoints should be an int >= 1
+    '''
+
+    if postmortem_timepoints < 1:
+        raise ValueError('postmortem_timepoints should be >= 1')
+    elif not numpy.issubdtype(postmortem_timepoints, numpy.integer):
+        raise ValueError('postmortem_timepoints must be an int')
+
+    experiment_root = pathlib.Path(experiment_root)
+    annotations = load_data.read_annotations(experiment_root)
+    good_annotations = load_data.filter_annotations(annotations, load_data.filter_excluded)
 
     for position, position_annotations in good_annotations.items():
         general_annotations, timepoint_annotations = position_annotations
-        timepoint_keys = list(timepoint_annotations.keys())
         timepoint_stages = [timepoint_info['stage'] for timepoint_info in timepoint_annotations.values()]
-        death_timepoint = timepoint_keys[timepoint_stages.index('dead')]
+        death_timepoint_index = timepoint_stages.index('dead')
 
-        for timepoint in timepoint_keys:
-            time_since_death = (_extract_datetime_fromstr(timepoint_label) - _extract_datetime_fromstr(death_timepoint))/3600
-            if time_since_death > postmortem_time:
+        for timepoint_num, timepoint in enumerate(timepoint_keys):
+            timepoints_after_death = death_timepoint_index - timepoint_num
+            if timepoints_after_death > postmortem_timepoints:
                 remove_timepoint(experiment_root, position, timepoint)
-
-def _extract_datetime_fromstr(time_str):
-    '''Converts standard experimental timepoint string to time representation (seconds since epoch)'''
-    return datetime.datetime.strptime(time_str,'%Y-%m-%dt%H%M').timestamp()
