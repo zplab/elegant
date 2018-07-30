@@ -344,10 +344,11 @@ class PoseMeasurements:
             centroid_distances = []
             rmsds = []
             for adjacent in (before, after):
-                adj_center_tck, adj_width_tck = adjacent.get(self.pose_annotation, (None, None))
-                if adj_center_tck is not None:
-                    centroid_distances.append(spline_geometry.centroid_distance(center_tck, adj_center_tck, num_points=300))
-                    rmsds.append(spline_geometry.rmsd(center_tck, adj_center_tck, num_points=300))
+                if adjacent is not None:
+                    adj_center_tck, adj_width_tck = adjacent.get(self.pose_annotation, (None, None))
+                    if adj_center_tck is not None:
+                        centroid_distances.append(spline_geometry.centroid_distance(center_tck, adj_center_tck, num_points=300))
+                        rmsds.append(spline_geometry.rmsd(center_tck, adj_center_tck, num_points=300))
             if len(rmsds) > 0:
                 measures['centroid_dist'] = numpy.mean(centroid_distances) * self.microns_per_pixel
                 measures['rms_dist'] = numpy.mean(rmsds) * self.microns_per_pixel

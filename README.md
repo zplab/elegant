@@ -37,3 +37,23 @@ Overall, the workflow is:
     4. run `elegant.process_data.measure_worms()` to make measurements of interest (can work locally or on cluster)
     5. run `elegant.process_data.collate_data()` to produce authoritative files of all the measurements.
     6. load these files with `elegant.worm_data.read_worms()` to begin interactive data analysis.
+
+Here is simple example for starting up an annotator with a few standard annotation types:
+
+    from ris_widget import ris_widget
+    from elegant.gui import pose_annotation
+    from elegant.gui import stage_field
+    from elegant.gui import timepoint_annotations
+    from elegant.gui import keypoint_annotation
+    from elegant import load_data
+    
+    rw = ris_widget.RisWidget()
+    width_estimator, width_pca_basis = pose_annotation.default_width_data(pixels_per_micron=1/1.3, experiment_temperature=25)
+    pa = pose_annotation.PoseAnnotation(rw, mean_widths=width_estimator, width_pca_basis=width_pca_basis)
+    st = stage_field.StageField()
+    ta = timepoint_annotations.TimepointAnnotations()
+    ka = keypoint_annotation.KeypointAnnotation(rw.alt_view, ['pharynx'], center_y_origin=True, auto_advance=True)
+    exp_root = '/path/to/data'
+    positions = load_data.scan_experiment_dir(exp_root)
+    from elegant.gui import experiment_annotator
+    ea = experiment_annotator.ExperimentAnnotator(rw, exp_root, positions, [pa, st, ta, ka])
