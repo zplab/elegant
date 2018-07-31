@@ -28,18 +28,18 @@ def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=
 
     experiment_root = pathlib.Path(experiment_root)
 
-    offending_files = [img_file for img_file in (experiment_root / position).iterdir() if timepoint in str(img_file.name)]
-    if len(offending_files) > 0:
-        print(f'Found offending files for position {position}: f{offending_files}')
+    files_to_remove = [img_file for img_file in (experiment_root / position).iterdir() if timepoint in str(img_file.name)]
+    if len(files_to_remove) > 0:
+        print(f'Found files for removal for position {position}: {files_to_remove}')
         if not dry_run:
-            [img_file.unlink() for img_file in offending_files]
+            [img_file.unlink() for img_file in files_to_remove]
 
     md_file = (experiment_root / position /'position_metadata.json')
     with md_file.open() as md_fp:
         pos_md = json.load(md_fp)
     has_bad_timepoint = any([timepoint_info['timepoint'] == timepoint for timepoint_info in pos_md])
     if has_bad_timepoint:
-        print('Found offending entry in position_metadata for: '+str(position))
+        print(f'Found entry for removal in position_metadata for position {position}')
         if not dry_run:
             pos_md = [timepoint_data for timepoint_data in pos_md if timepoint_data['timepoints'] != timepoint]
             datafile.json_encode_atomic_legible_to_file(pos_md, experiment_root / position / 'position_metadata.json')   # Write out new position_metadata
@@ -49,7 +49,7 @@ def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=
         general_annotations,timepoint_annotations = load_data.read_annotation_file(position_annotation_file)
 
         if timepoint in timepoint_annotations:
-            print(f'Found offending entry in annotation for position {position}')
+            print(f'Found entry for removal in annotation for position {position}')
             if not dry_run:
                 del timepoint_annotations[timepoint]
                 load_data.write_annotation_file(position_annotation_file,
@@ -79,16 +79,13 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     for position in positions:
         remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=dry_run)
 
-    # Handle experiment_metadata
-    # Not sure if this is just unnecessary tidying up, since expt_metadata isn't explicitly used for anything
-    # in the new codebase, but...
     md_file = (experiment_root/'experiment_metadata.json')
     with md_file.open() as md_fp:
         expt_md = json.load(md_fp)
 
     try:
         timepoint_idx = expt_md['timepoints'].index(timepoint)
-    except ValueError:  # Offending timepoint didn't make it into metadata
+    except ValueError:
         print('Timepoint not found in experiment_metadata')
         return
 
