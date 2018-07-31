@@ -6,7 +6,8 @@ import datetime
 import numpy
 
 from zplib import datafile
-from elegant import load_data
+
+from . import load_data
 
 def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=False):
     """Removes all memory of a given timepoint for a given position (files, metadata, annotations entries)
@@ -18,7 +19,6 @@ def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=
         dry_run: bool flag that toggles taking action (if False, only specifies when offending files are found)
 
     Example Usage:
-
         experiment_root = /path/to/experiment
         position = '000'
         timepoint = '2018-07-30t1200'
