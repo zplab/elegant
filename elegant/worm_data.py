@@ -209,16 +209,6 @@ def meta_worms(grouped_worms, *features, age_feature='age', summary_features=('l
         meta_worms.append(meta_worm)
     return meta_worms
 
-def _valid_values(array):
-    if numpy.issubdtype(array.dtype, numpy.floating):
-        return ~numpy.isnan(array)
-    elif array.dtype.kind == 'S':
-        return array != b''
-    elif array.dtype.kind == 'U':
-        return array != ''
-    else:
-        return numpy.ones(array.shape, dtype=bool)
-
 def gaussian_filter(ages, age_to_smooth, sigma, window_size=numpy.inf):
     """Gaussian-weighted smoothing filter (Causal: does not use future data).
 
@@ -632,6 +622,16 @@ class Worm(object):
         if dtype is float:
             new_values[~mask] = numpy.nan
         setattr(self.td, feature, new_values)
+
+def _valid_values(array):
+    if numpy.issubdtype(array.dtype, numpy.floating):
+        return ~numpy.isnan(array)
+    elif array.dtype.kind == 'S':
+        return array != b''
+    elif array.dtype.kind == 'U':
+        return array != ''
+    else:
+        return numpy.ones(array.shape, dtype=bool)
 
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
