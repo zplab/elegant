@@ -110,7 +110,7 @@ def remove_excluded_positions(experiment_root,dry_run=False):
     Each position has a folder containing a copy of its position_metadata;
     an 'annotations' subfolder contains all of the annotations for excluded positions;
     and, a copy of the old experiment_metadata lies in this subfolder
-    (though subsequent calls to remove_excluded_positions will overwrite this copy of the experiment metadata
+    (though subsequent calls to remove_excluded_positions will overwrite this copy of the experiment metadata).
     Thus, it is recommended that this function be run on completed experiments to prevent data loss.
 
     Parameters:
