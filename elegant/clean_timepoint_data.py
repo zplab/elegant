@@ -123,19 +123,21 @@ def remove_excluded_positions(experiment_root,dry_run=False):
     good_annotations = load_data.filter_annotations(annotations, load_data.filter_excluded)
     excluded_positions = sorted(set(annotations.keys()).difference(set(good_annotations.keys())))
 
+    excluded_root = experiment_root / 'excluded_positions'
+
     for position in excluded_positions:
         if (experiment_root / position).exists():
             print(f'Found an excluded position to delete {position}')
             if not dry_run:
-                (experiment_root / 'excluded_positions' / position).mkdir(parents=True,exist_ok=True)
-                (experiment_root / 'excluded_positions' / 'annotations').mkdir(parents=True,exist_ok=True)
+                (excluded_root / position).mkdir(parents=True,exist_ok=True)
+                (excluded_root / 'annotations').mkdir(parents=True,exist_ok=True)
 
-                shutil.copy(str(experiment_root / position / 'position_metadata.json'),
-                    str(experiment_root / 'excluded_positions' / position / 'position_metadata.json'))
-                shutil.copy(str(experiment_root / 'annotations' / f'{position}.pickle'),
-                    str(experiment_root / 'excluded_positions' / 'annotations' / f'{position}.pickle'))
-                shutil.copy(str(experiment_root /  'experiment_metadata.json'),
-                    str(experiment_root / 'excluded_positions' / 'experiment_metadata_old.json')) # Back this up JIC....
+                shutil.copy(experiment_root / position / 'position_metadata.json',
+                    excluded_root / position / 'position_metadata.json')
+                shutil.copy(experiment_root / 'annotations' / f'{position}.pickle',
+                    excluded_root / 'annotations' / f'{position}.pickle')
+                shutil.copy(experiment_root /  'experiment_metadata.json',
+                    excluded_root / 'experiment_metadata.json') # Back this up JIC....
 
                 shutil.rmtree(str(experiment_root / position))
                 (experiment_root / 'annotations' / f'{position}.pickle').unlink()
