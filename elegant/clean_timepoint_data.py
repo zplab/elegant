@@ -28,11 +28,18 @@ def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=
 
     experiment_root = pathlib.Path(experiment_root)
 
-    files_to_remove = [img_file for img_file in (experiment_root / position).iterdir() if img_file.name.startswith(timepoint)]
-    if len(files_to_remove) > 0:
-        print(f'Found files for removal for position {position}: {files_to_remove}')
+    image_files_to_remove = [img_file for img_file in (experiment_root / position).iterdir() if img_file.name.startswith(timepoint)]
+    if len(image_files_to_remove) > 0:
+        print(f'Found image files for removal for position {position}: {image_files_to_remove}')
         if not dry_run:
-            [img_file.unlink() for img_file in files_to_remove]
+            [img_file.unlink() for img_file in image_files_to_remove]
+
+    if (experiment_root / 'derived_data' / 'mask' / position).exists():
+        mask_files_to_remove = [mask_file for mask_file in (experiment_root / 'derived_data' / 'mask' / position).iterdir() if mask_file.name.startswith(timepoint)]
+        if len(mask_files_to_remove) > 0:
+            print(f'Found mask files for removal for position {position}: {mask_files_to_remove}')
+            if not dry_run:
+                [mask_file.unlink() for mask_file in mask_files_to_remove]
 
     md_file = (experiment_root / position /'position_metadata.json')
     with md_file.open() as md_fp:
