@@ -106,8 +106,12 @@ def remove_excluded_positions(experiment_root,dry_run=False):
 
     This function deletes position folders from the specified experiment directory,
     but saves position_metadata and annotations into the 'excluded_positions' subfolder.
-    The 'excluded_positions' subfolder has parallel structure to the standard experiment_root,
-    with one 'annotations' folder for annotations and each position having its own folder containing metadata.
+    'excluded_positions' has a parallel structure to the standard experiment root
+    Each position has a folder containing a copy of its position_metadata;
+    an 'annotations' subfolder contains all of the annotations for excluded positions;
+    and, a copy of the old experiment_metadata lies in this subfolder
+    (though subsequent calls to remove_excluded_positions will overwrite this copy of the experiment metadata
+    Thus, it is recommended that this function be run on completed experiments to prevent data loss.
 
     Parameters:
         experiment_root: str/pathlib.Path to experiment
