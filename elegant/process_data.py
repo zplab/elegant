@@ -25,19 +25,17 @@ def update_annotations(experiment_root):
     update the annotations dictionaries with all relevant data that can be
     automatically extracted.
     """
-    annotate(experiment_root, [annotate_timestamps, annotate_poses])
+    annotate(experiment_root, [annotate_timestamps, annotate_z, annotate_poses], [annotate_stage_pos])
 
-def annotate(experiment_root, annotators):
+def annotate(experiment_root, annotators=[], position_annotators=[]):
     """Apply one or more measurement functions to produce annotations for manual review.
 
     Parameters:
         experiment_root: the path to an experimental directory.
         annotators: list of annotation functions to call for each timepoint. Each
-            will be called as:
-                annotator(experiment_root, position, timepoint, metadata, annotations)
-            where:
+            will be called with parameters:
                 experiment_root: as above
-                positions: name of position
+                position: name of position
                 timepoint: name of timepoint
                 metadata: metadata dict for the timepoint from 'position_metadata.json'
                 annotations: annotation dictionary for the timepoint
@@ -45,14 +43,25 @@ def annotate(experiment_root, annotators):
             and the function may use the contents of that dictionary to decide
             whether to overwrite existing annotations with new ones or not.
             The return value of the measure function is ignored.
+        position_annotators: list of annotation functions to call for each position
+            with parameters:
+                experiment_root: as above
+                position: name of position
+                metadata: metadata dict  from 'experiment_metadata.json'
+                annotations: annotation dictionary for the position
+
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = load_data.read_annotations(experiment_root)
+    with (experiment_root / 'experiment_metadata.json').open('r') as f:
+        experiment_metadata = json.load(f)
     for metadata_path in sorted(experiment_root.glob('*/position_metadata.json')):
         with metadata_path.open('r') as f:
             position_metadata = json.load(f)
         position = metadata_path.parent.name
         position_annotations, timepoint_annotations = positions.setdefault(position, ({}, {}))
+        for annotator in position_annotators:
+            annotator(experiment_root, position, experiment_metadata, position_annotations)
         for metadata in position_metadata:
             timepoint = metadata['timepoint']
             annotations = timepoint_annotations.setdefault(timepoint, {})
@@ -62,6 +71,9 @@ def annotate(experiment_root, annotators):
 
 def annotate_timestamps(experiment_root, position, timepoint, metadata, annotations):
     annotations['timestamp'] = metadata['timestamp']
+
+def annotate_z(experiment_root, position, timepoint, metadata, annotations):
+    annotations['stage_z'] = metadata.get('fine_z', numpy.nan)
 
 def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
     mask_dir = experiment_root / DERIVED_ROOT / 'mask' / position
@@ -75,6 +87,12 @@ def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
         if center_tck is None:
             mask = freeimage.read(mask_path) > 0
             annotations[annotation] = worm_spline.pose_from_mask(mask)
+
+def annotate_stage_pos(experiment_root, position, metadata, annotations):
+    x, y, z = metadata['positions'][position]
+    annotations['stage_x'] = x
+    annotations['stage_y'] = y
+    annotations['starting_stage_z'] = z
 
 def set_hatch_time(experiment_root, year, month, day, hour):
     """Manually set a hatch-time for all worms in an experiment.
@@ -132,7 +150,6 @@ def _update_ages(timepoint_annotations, position_annotations, stage_annotation='
         timestamp = annotations.get('timestamp')
         if timestamp is not None:
             annotations['age'] = (timestamp - hatch_timestamp) / 3600 # age in hours
-
 
 def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs=1):
     """Apply one or more measurement functions to all or some worms in an experiment.
@@ -255,7 +272,7 @@ def _multiprocess_measure(experiment_root, positions, measures, measurement_name
     with multiprocessing.Pool(processes=n_jobs) as pool:
         pool.starmap(measure_worms, job_args)
 
-def collate_data(experiment_root):
+def collate_data(experiment_root, position_features=('stage_x', 'stage_y', 'starting_stage_z')):
     """Gather all .tsv files produced by measurement runs into a single file.
 
     This function will concatenate all individual-worm .tsv files for all of the
@@ -266,19 +283,23 @@ def collate_data(experiment_root):
     If possible, lifespans and other spans will be calculated for the worms,
     with the results stored in a master-file of summary data:
         {experiment_root}/derived_data/measurements/{experiment_root.name} summary.tsv
+    Any features named in the position_features parameter will be transfered
+    from the annotations for that position to the worm summary data as well.
 
     The worms in these files will be renamed as:
         '{experiment_root.name} {position_name}'
     """
     experiment_root = pathlib.Path(experiment_root)
+    positions = load_data.read_annotations(experiment_root)
     experiment_name = experiment_root.name
     derived_root = experiment_root / DERIVED_ROOT
     measurement_root = derived_root / 'measurements'
     measurements = []
+    name_prefix = experiment_name + ' '
     for measurement_dir in measurement_root.iterdir():
         files = list(measurement_dir.glob('*.tsv'))
         if len(files) > 0:
-            measurements.append(worm_data.read_worms(*files, name_prefix=experiment_name+' ', calculate_lifespan=False))
+            measurements.append(worm_data.read_worms(*files, name_prefix=name_prefix, calculate_lifespan=False))
     worms = measurements[0]
     for other_measurement in measurements[1:]:
         worms.merge_in(other_measurement)
@@ -287,23 +308,28 @@ def collate_data(experiment_root):
             w.calculate_ages_and_spans()
         except (NameError, ValueError):
             print(f'could not calculate lifespan for worm {w.name}')
+        position_annotations, timepoint_annotations = positions.get(w.name[len(name_prefix):], ({}, {}))
+        for feature in position_features:
+            if feature in position_annotations:
+                setattr(w, feature, position_annotations[feature])
+
     worms.write_timecourse_data(derived_root / f'{experiment_name} timecourse.tsv', multi_worm_file=True, error_on_missing=False)
     worms.write_summary_data(derived_root / f'{experiment_name} summary.tsv', error_on_missing=False)
 
 class BasicMeasurements:
-    """Provide data columns for the timepoint's UNIX timestamp and the annotated stage.
+    """Provide basic standard data columns for timestamp, life stage, and z position.
 
     Each position/timepoint to be measured must have a stage annotated and
-    load_data.annotate_timestamps must have been run on the experiment root
-    in order to generate the timestamp annotations needed. Otherwise an error
-    will be raised.
+    update_annotations() must have been run on the experiment root
+    in order to generate the timestamp and z-value annotations needed.
+    Otherwise an error will be raised.
 
     This data is required to calculate lifespans and other spans, and should be
-    considered the minimum set of useful information about each worm.
+    considered the basic set of useful information about each worm.
     """
-    feature_names = ['timestamp', 'stage']
+    feature_names = ['timestamp', 'stage', 'stage_z']
     def measure(self, position_root, timepoint, annotations, before, after):
-        return annotations['timestamp'], annotations['stage']
+        return annotations['timestamp'], annotations['stage'], annotations['stage_z']
 
 class PoseMeasurements:
     """Provide data columns based on annotated worm pose information.
