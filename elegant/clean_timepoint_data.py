@@ -28,11 +28,18 @@ def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=
 
     experiment_root = pathlib.Path(experiment_root)
 
-    files_to_remove = [img_file for img_file in (experiment_root / position).iterdir() if img_file.name.startswith(timepoint)]
-    if len(files_to_remove) > 0:
-        print(f'Found files for removal for position {position}: {files_to_remove}')
+    image_files_to_remove = [img_file for img_file in (experiment_root / position).iterdir() if img_file.name.startswith(timepoint)]
+    if len(image_files_to_remove) > 0:
+        print(f'Found image files for removal for position {position}: {image_files_to_remove}')
         if not dry_run:
-            [img_file.unlink() for img_file in files_to_remove]
+            [img_file.unlink() for img_file in image_files_to_remove]
+
+    if (experiment_root / 'derived_data' / 'mask' / position).exists():
+        mask_files_to_remove = [mask_file for mask_file in (experiment_root / 'derived_data' / 'mask' / position).iterdir() if mask_file.name.startswith(timepoint)]
+        if len(mask_files_to_remove) > 0:
+            print(f'Found mask files for removal for position {position}: {mask_files_to_remove}')
+            if not dry_run:
+                [mask_file.unlink() for mask_file in mask_files_to_remove]
 
     md_file = (experiment_root / position /'position_metadata.json')
     with md_file.open() as md_fp:
@@ -104,6 +111,13 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
 def remove_excluded_positions(experiment_root,dry_run=False):
     """Deletes excluded positions from an experiment directory
 
+    This function deletes position folders and any previously made masks from the specified experiment directory,
+    but saves position_metadata and annotations into the 'excluded_positions' subfolder.
+    'excluded_positions' has a parallel structure to the standard experiment root
+    Each position has a folder containing a copy of its position_metadata;
+    an 'annotations' subfolder contains all of the annotations for excluded positions;
+    and, a copy of the original experiment_metadata lies in this subfolder.
+
     Parameters:
         experiment_root: str/pathlib.Path to experiment
         dry_run: bool flag that toggles taking action (if False, only specifies when offending files are found)
@@ -113,11 +127,35 @@ def remove_excluded_positions(experiment_root,dry_run=False):
     annotations = load_data.read_annotations(experiment_root)
     good_annotations = load_data.filter_annotations(annotations, load_data.filter_excluded)
     excluded_positions = sorted(set(annotations.keys()).difference(set(good_annotations.keys())))
+
+    excluded_root = experiment_root / 'excluded_positions'
+
     for position in excluded_positions:
         if (experiment_root / position).exists():
             print(f'Found an excluded position to delete {position}')
             if not dry_run:
-                shutil.rmtree(str(experiment_root / position))
+                (excluded_root / position).mkdir(parents=True,exist_ok=True)
+                (excluded_root / 'annotations').mkdir(parents=True,exist_ok=True)
+
+                shutil.copy(experiment_root / position / 'position_metadata.json',
+                    excluded_root / position / 'position_metadata.json')
+                shutil.copy(experiment_root / 'annotations' / f'{position}.pickle',
+                    excluded_root / 'annotations' / f'{position}.pickle')
+                if not (excluded_root / 'experiment_metadata.json').exists():
+                    shutil.copy(experiment_root /  'experiment_metadata.json',
+                        excluded_root / 'experiment_metadata.json')
+
+                shutil.rmtree(experiment_root / position)
+                (experiment_root / 'annotations' / f'{position}.pickle').unlink()
+                if (experiment_root / 'derived_data' / 'mask' / position).exists():
+                    shutil.rmtree(experiment_root / 'derived_data' / 'mask' / position)
+
+                # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
+                with (experiment_root /  'experiment_metadata.json').open('r') as md_file:
+                    expt_md = json.load(md_file)
+                del expt_md['positions'][position]
+                datafile.json_encode_atomic_legible_to_file(expt_md, md_file)
+
 
 def remove_dead_timepoints(experiment_root, postmortem_timepoints, dry_run=False):
     """Deletes excess timepoints in an experiment where worms are dead
