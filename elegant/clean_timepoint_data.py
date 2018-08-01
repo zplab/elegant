@@ -151,10 +151,11 @@ def remove_excluded_positions(experiment_root,dry_run=False):
                     shutil.rmtree(experiment_root / 'derived_data' / 'mask' / position)
 
                 # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
-                with (experiment_root /  'experiment_metadata.json').open('r') as md_file:
-                    expt_md = json.load(md_file)
+                md_file = (experiment_root /  'experiment_metadata.json')
+                with md_file.open('r') as md_fp:
+                    expt_md = json.load(md_fp)
                 del expt_md['positions'][position]
-                datafile.json_encode_atomic_legible_to_file(expt_md, experiment_root /  'experiment_metadata.json')
+                datafile.json_encode_atomic_legible_to_file(expt_md, md_file)
 
 
 def remove_dead_timepoints(experiment_root, postmortem_timepoints, dry_run=False):
