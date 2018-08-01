@@ -104,6 +104,11 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
 def remove_excluded_positions(experiment_root,dry_run=False):
     """Deletes excluded positions from an experiment directory
 
+    This function deletes position folders from the specified experiment directory,
+    but saves position_metadata and annotations into the 'excluded_positions' subfolder.
+    The 'excluded_positions' subfolder has parallel structure to the standard experiment_root,
+    with one 'annotations' folder for annotations and each position having its own folder containing metadata.
+
     Parameters:
         experiment_root: str/pathlib.Path to experiment
         dry_run: bool flag that toggles taking action (if False, only specifies when offending files are found)
@@ -113,11 +118,30 @@ def remove_excluded_positions(experiment_root,dry_run=False):
     annotations = load_data.read_annotations(experiment_root)
     good_annotations = load_data.filter_annotations(annotations, load_data.filter_excluded)
     excluded_positions = sorted(set(annotations.keys()).difference(set(good_annotations.keys())))
+
     for position in excluded_positions:
         if (experiment_root / position).exists():
             print(f'Found an excluded position to delete {position}')
             if not dry_run:
+                (experiment_root / 'excluded_positions' / position).mkdir(parents=True,exist_ok=True)
+                (experiment_root / 'excluded_positions' / 'annotations').mkdir(parents=True,exist_ok=True)
+
+                shutil.copy(str(experiment_root / position / 'position_metadata.json'),
+                    str(experiment_root / 'excluded_positions' / position / 'position_metadata.json'))
+                shutil.copy(str(experiment_root / 'annotations' / f'{position}.pickle'),
+                    str(experiment_root / 'excluded_positions' / 'annotations' / f'{position}.pickle'))
+                shutil.copy(str(experiment_root /  'experiment_metadata.json'),
+                    str(experiment_root / 'excluded_positions' / 'experiment_metadata_old.json')) # Back this up JIC....
+
                 shutil.rmtree(str(experiment_root / position))
+                (experiment_root / 'annotations' / f'{position}.pickle').unlink()
+
+                # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
+                with (experiment_root /  'experiment_metadata.json').open('r') as md_file:
+                    expt_md = json.load(md_file)
+                del expt_md['positions'][position]
+                datafile.json_encode_atomic_legible_to_file(expt_md, md_file)
+
 
 def remove_dead_timepoints(experiment_root, postmortem_timepoints, dry_run=False):
     """Deletes excess timepoints in an experiment where worms are dead
