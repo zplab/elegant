@@ -104,14 +104,12 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
 def remove_excluded_positions(experiment_root,dry_run=False):
     """Deletes excluded positions from an experiment directory
 
-    This function deletes position folders from the specified experiment directory,
+    This function deletes position folders and any previously made masks from the specified experiment directory,
     but saves position_metadata and annotations into the 'excluded_positions' subfolder.
     'excluded_positions' has a parallel structure to the standard experiment root
     Each position has a folder containing a copy of its position_metadata;
     an 'annotations' subfolder contains all of the annotations for excluded positions;
-    and, a copy of the old experiment_metadata lies in this subfolder
-    (though subsequent calls to remove_excluded_positions will overwrite this copy of the experiment metadata).
-    Thus, it is recommended that this function be run on completed experiments to prevent data loss.
+    and, a copy of the original experiment_metadata lies in this subfolder.
 
     Parameters:
         experiment_root: str/pathlib.Path to experiment
@@ -136,11 +134,14 @@ def remove_excluded_positions(experiment_root,dry_run=False):
                     excluded_root / position / 'position_metadata.json')
                 shutil.copy(experiment_root / 'annotations' / f'{position}.pickle',
                     excluded_root / 'annotations' / f'{position}.pickle')
-                shutil.copy(experiment_root /  'experiment_metadata.json',
-                    excluded_root / 'experiment_metadata.json') # Back this up JIC....
+                if not (excluded_root / 'experiment_metadata.json').exists():
+                    shutil.copy(experiment_root /  'experiment_metadata.json',
+                        excluded_root / 'experiment_metadata.json')
 
                 shutil.rmtree(experiment_root / position)
                 (experiment_root / 'annotations' / f'{position}.pickle').unlink()
+                if (experiment_root / 'derived_data' / 'mask' / position).exists():
+                    shutil.rmtree(experiment_root / 'derived_data' / 'mask' / position)
 
                 # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
                 with (experiment_root /  'experiment_metadata.json').open('r') as md_file:
