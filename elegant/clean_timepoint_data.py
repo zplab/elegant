@@ -139,7 +139,7 @@ def remove_excluded_positions(experiment_root,dry_run=False):
                 shutil.copy(experiment_root /  'experiment_metadata.json',
                     excluded_root / 'experiment_metadata.json') # Back this up JIC....
 
-                shutil.rmtree(str(experiment_root / position))
+                shutil.rmtree(experiment_root / position)
                 (experiment_root / 'annotations' / f'{position}.pickle').unlink()
 
                 # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
