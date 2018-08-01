@@ -209,6 +209,51 @@ def meta_worms(grouped_worms, *features, age_feature='age', summary_features=('l
         meta_worms.append(meta_worm)
     return meta_worms
 
+def _valid_values(array):
+    if numpy.issubdtype(array.dtype, numpy.floating):
+        return ~numpy.isnan(array)
+    elif array.dtype.kind == 'S':
+        return array != b''
+    elif array.dtype.kind == 'U':
+        return array != ''
+    else:
+        return numpy.ones(array.shape, dtype=bool)
+
+def gaussian_filter(ages, age_to_smooth, sigma, window_size=numpy.inf):
+    """Gaussian-weighted smoothing filter (Causal: does not use future data).
+
+    The filter returns the weights for each entry in the ages input, for the
+    given age_to_smooth.
+
+    Parameters:
+        ages: ages of the worm at each timepoint
+        age_to_smooth: age for which to calculate the smoothing weights.
+        sigma: temporal sigma for smoothing.
+        window_size: if specified, the number of hours in the past that should
+            be used in the weighting at all. (I.e. if specified, the result will
+            be a truncated gaussian weighting.)
+    """
+    time_delta = ages - age_to_smooth
+    weights = numpy.exp(-time_delta**2/(2*sigma))
+    ignore = (time_delta > 0) | (time_delta < -window_size)
+    weights[ignore] = 0
+    return weights
+
+def uniform_filter(ages, age_to_smooth, window_size):
+    """Uniform-weighted smoothing filter (Causal: does not use future data).
+
+    The filter returns a uniform (boxcar) filter over a specified range of past
+    data. That is, the smoothed value will simply be the (unweighted) average of
+    all the data point within the given window.
+
+    Parameters:
+        ages: ages of the worm at each timepoint
+        age_to_smooth: age for which to calculate the smoothing weights.
+        window_size: The number of hours in the past that should be averaged over.
+    """
+    time_delta = ages - age_to_smooth
+    return (time_delta <= 0) & (time_delta >= -window_size)
+
 class Worm(object):
     """Object for storing data pertaining to an indiviual worm's life.
 
@@ -587,51 +632,6 @@ class Worm(object):
         if dtype is float:
             new_values[~mask] = numpy.nan
         setattr(self.td, feature, new_values)
-
-def _valid_values(array):
-    if numpy.issubdtype(array.dtype, numpy.floating):
-        return ~numpy.isnan(array)
-    elif array.dtype.kind == 'S':
-        return array != b''
-    elif array.dtype.kind == 'U':
-        return array != ''
-    else:
-        return numpy.ones(array.shape, dtype=bool)
-
-def gaussian_filter(ages, age_to_smooth, sigma, window_size=numpy.inf):
-    """Gaussian-weighted smoothing filter (Causal: does not use future data).
-
-    The filter returns the weights for each entry in the ages input, for the
-    given age_to_smooth.
-
-    Parameters:
-        ages: ages of the worm at each timepoint
-        age_to_smooth: age for which to calculate the smoothing weights.
-        sigma: temporal sigma for smoothing.
-        window_size: if specified, the number of hours in the past that should
-            be used in the weighting at all. (I.e. if specified, the result will
-            be a truncated gaussian weighting.)
-    """
-    time_delta = ages - age_to_smooth
-    weights = numpy.exp(-time_delta**2/(2*sigma))
-    ignore = (time_delta > 0) | (time_delta < -window_size)
-    weights[ignore] = 0
-    return weights
-
-def uniform_filter(ages, age_to_smooth, window_size):
-    """Uniform-weighted smoothing filter (Causal: does not use future data).
-
-    The filter returns a uniform (boxcar) filter over a specified range of past
-    data. That is, the smoothed value will simply be the (unweighted) average of
-    all the data point within the given window.
-
-    Parameters:
-        ages: ages of the worm at each timepoint
-        age_to_smooth: age for which to calculate the smoothing weights.
-        window_size: The number of hours in the past that should be averaged over.
-    """
-    time_delta = ages - age_to_smooth
-    return (time_delta <= 0) & (time_delta >= -window_size)
 
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
