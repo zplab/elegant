@@ -106,7 +106,10 @@ class PoseAnnotation(annotator.AnnotationField):
         self.pca_button.clicked.connect(self.pca_smooth_widths)
         self._add_row(layout, Qt.QLabel('Widths:'), self.default_button, self.pca_button)
 
+<<<<<<< HEAD
         self.auto_center_button = Qt.QPushButton('All')
+=======
+>>>>>>> 41c43d3e80fea885ab4f8ec948c4fde311618c41
         self.auto_center_button.clicked.connect(self.auto_center)
         self.auto_widths_button = Qt.QPushButton('Widths')
         self.auto_widths_button.clicked.connect(self.auto_widths)
@@ -231,7 +234,11 @@ class PoseAnnotation(annotator.AnnotationField):
             image=self.ris_widget.image.data,
             center_tck=self.outline.center_spline.geometry,
             width_tck=self.outline.width_spline.geometry,
+<<<<<<< HEAD
             avg_width_tck=self.get_default_widths(), mag='5x')
+=======
+            avg_width_tck=self.get_default_widths())
+>>>>>>> 41c43d3e80fea885ab4f8ec948c4fde311618c41
         smooth_width_tck = self._pca_smooth_widths(width_tck)
         if smooth_width_tck is not None:
             width_tck = smooth_width_tck
@@ -254,6 +261,7 @@ class PoseAnnotation(annotator.AnnotationField):
         mean_widths = self._get_default_width_profile()
         if mean_widths is None:
             return
+<<<<<<< HEAD
         basis_shape = self.width_pca_basis.shape[1]
         x = numpy.linspace(0, 1, basis_shape)
         mean_shape = mean_widths.shape[0]
@@ -268,6 +276,8 @@ class PoseAnnotation(annotator.AnnotationField):
         width_tck = self._pca_smooth_widths(self.outline.width_spline.geometry)
         if width_tck is not None:
             self._change_geometry(width_tck=width_tck)
+=======
+>>>>>>> 41c43d3e80fea885ab4f8ec948c4fde311618c41
 
     def draw_centerline(self, draw):
         center_tck, width_tck = self.get_annotation()

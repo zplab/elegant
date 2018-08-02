@@ -49,6 +49,17 @@ class ExperimentAnnotator:
         ris_widget.add_annotator(annotation_fields)
         self.annotation_fields = annotation_fields
         self._init_positions(positions)
+
+        # skip positions with no timepoints listed (don't do this in _init_positions
+        # because a subclass might override it and we don't want to duplicate logic)
+        position_names, positions = [], []
+        for name, timepoints in zip(self.position_names, self.positions):
+            if len(timepoints) > 0:
+                position_names.append(name)
+                positions.append(timepoints)
+        self.position_names = position_names
+        self.positions = positions
+
         self.position_names_to_indices = {name: i for i, name in enumerate(self.position_names)}
         self.position_i = None
         self.flipbook = ris_widget.flipbook

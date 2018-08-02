@@ -133,8 +133,6 @@ class CenterSpline(base.RWGeometryItemMixin, Qt.QGraphicsPathItem):
         bandwidth = self._warp_bandwidth * bandwidth_factor
         warp_coefficients = numpy.exp(-(self._warp_distances/bandwidth)**2)
         displacements = numpy.outer(warp_coefficients, delta)
-        disp_sqdist = (displacements**2).sum(axis=1)
-        displacements[disp_sqdist < 4] = 0
         self._points = self._warp_points + displacements
         self._generate_tck_from_points()
 

@@ -10,8 +10,10 @@ from zplib.scalar_stats import regress
 from zplib.image import colorize
 from zplib import datafile
 
+TIME_UNITS = dict(days=24, hours=1, minutes=1/60, seconds=1/3600)
+
 def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
-    calculate_lifespan=True, last_timepoint_is_first_dead=True, age_scale=1):
+    calculate_lifespan=True, last_timepoint_is_first_dead=True, time_units='hours'):
     """Read worm data files into a Worms object.
 
     Each file can be either a single-worm file (where the "timepoint" identifier
@@ -63,10 +65,13 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
             last time the worm was known to be alive. Only used when lifespans
             are auto-calculated and when there are no 'timestamp' and 'stage'
             columns.
-        age_scale: scale-factor for the ages/spans read in. The values in the "age"
-            column and any column ending in "_age" will be multiplied by this
-            scalar. Likewise for any summary columns ending in "span".
-            (This is useful e.g. for converting hours to days.)
+        time_units: the unit of time for the values in the "age" column and any
+            column ending in "_age". This unit will also be used for summary
+            columns ending in "span". All time units will be converted into
+            hours internally. (The rescale_time() method can be used to
+            change units later, but this is at your own risk: all time-based
+            analysis code can and should assume time units of hours.)
+            Must be one of 'days', 'hours', 'minutes', or 'seconds'.
 
     Returns: Worms object, sorted by lifespan (if possible)
 
@@ -89,7 +94,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
             else:
                 prefix = name_prefix
             for name, header, data in _read_datafile(path, prefix, delimiter):
-                worms.append(Worm(name, header, data, age_scale))
+                worms.append(Worm(name, header, data, time_units))
     if isinstance(summary_globs, (str, pathlib.Path)):
         summary_globs = [summary_globs]
     elif summary_globs is None:
@@ -99,7 +104,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
         if len(paths) == 0:
             raise FileNotFoundError(f'"{path_glob}" matches no files.')
         for path in paths:
-            worms.read_summary_data(path, delimiter=delimiter, span_scale=age_scale)
+            worms.read_summary_data(path, delimiter=delimiter, time_units=time_units)
 
     if calculate_lifespan and not all(hasattr(w, 'lifespan') for w in worms):
         if all(hasattr(w.td, 'timepoint') and hasattr(w.td, 'stage') for w in worms):
@@ -217,7 +222,7 @@ class Worm(object):
     Convenience accessor functions for getting a range of timecourse measurements
     are provided.
     """
-    def __init__(self, name, feature_names=[], timepoint_data=[], age_scale=1):
+    def __init__(self, name, feature_names=[], timepoint_data=[], time_units='hours'):
         """It is generally preferable to construct worms from a factory function
         such as read_worms or meta_worms, rather than using the constructor.
 
@@ -226,13 +231,22 @@ class Worm(object):
             feature_names: names of the timecourse features measured for
                 this animal
             timepoint_data: for each timepoint, each of the measured features.
-            age_scale: scale-factor for the ages read in. The values in the
-                "age" column and any column ending in '_age' will be multiplied
-                by this scalar. (Useful e.g. for converting hours to days.)
+            time_units: the unit of time for the values in the "age" column and
+                any column ending in "_age". This unit will also be used for
+                summary columns ending in "span". All time units will be
+                converted into hours internally. (The rescale_time() method
+                can be used to change units later, but this is at your own
+                risk: all time-based analysis code can and should assume time
+                units of hours.)
+                Must be one of 'days', 'hours', 'minutes', or 'seconds'.
+
         """
         self.name = name
         self.td = _TimecourseData()
         vals_for_features = [[] for _ in feature_names]
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         for timepoint in timepoint_data:
             # add each entry in the timepoint data to the corresponding list in
             # vals_for_features
@@ -243,8 +257,25 @@ class Worm(object):
         for feature_name, feature_vals in zip(feature_names, vals_for_features):
             arr = numpy.array(feature_vals)
             if feature_name == 'age' or feature_name.endswith('_age'):
-                arr *= age_scale
+                arr *= time_scale
             setattr(self.td, feature_name, arr)
+
+    def rescale_time(self, time_scale):
+        """Rescale all timecourse and summary features by a given factor.
+
+        The "age" timecourse feature and all others ending in "_age", and any
+        summary feature ending in "span" will be multiplied by the provided
+        time_scale parameter.
+
+        Use carefully: all functions that care about the absolute time scale
+        will assume that time is scaled in hours.
+        """
+        for feature_name, feature_vals in self.td._items():
+            if feature_name == 'age' or feature_name.endswith('_age'):
+                setattr(self.td, feature_name, numpy.asarray(feature_vals) * time_scale)
+        for feature_name, feature_val in self.__dict__.items():
+            if feature_name.endswith('span'):
+                setattr(self, feature_name, feature_val * time_scale)
 
     def calculate_lifespan_simple(self, last_timepoint_is_first_dead=True):
         """Calculate the lifespan of each animal using a simplistic method.
@@ -410,13 +441,69 @@ class Worm(object):
         ages, value = self.get_time_range(feature, age_feature=age_feature)
         return numpy.interp(age, ages, value)
 
+    def smooth_feature(self, feature, filter=uniform_filter, age_feature='age',
+            min_age=-numpy.inf, max_age=numpy.inf, **filter_params):
+        """Smooth a feature with a given filter-function.
+
+        Data points within a given age range will be smooothed with a given
+        filter function. The pre-defined gaussian and uniform filters will
+        smooth the data with a gaussian- or un-weighted average (respectively)
+        of the data points previous to each current point. (I.e. these will be
+        "causal" filters that do not incorporate future data.)
+
+        For each timepoint in the selected time range, the filter function will
+        be called as filter(ages, age_to_smooth, **filter_params), where the
+        ages parameter contains the age at which each data point was acquired,
+        and the age_to_smooth parameter is the particular age at to get a
+        smoothed value for. The smoothing filter then chooses how to weight
+        each data point based on its temporal distance from the age under
+        consideration. The smoothing filter returns the weights for each
+        timepoint in the range, and a weighted average of the data in that
+        range is calculated.
+
+        The resulting smoothed data will be stored in a td attribute with the
+        name "smoothed_{feature}". Data points outside the provided time range
+        will be un-smoothed in this output.
+
+        Parameters:
+            feature: feature to filter over
+            filter: a smoothing filter that will be called as
+                filter(ages, age_to_smooth). Use of the pre-defined
+                gaussian_filter and uniform_filter functions is encouraged.
+            age_feature: the name of the feature to use to determine the age
+                window (as used by get_time_range).
+            min_age, max_age: Limits between which to perform filtering;
+                outside this range, no filtering is performed.
+            **filter_params: Additional parameters passed to the filter function.
+                In particular, uniform_filter requires a "window_size"
+                parameter, which defines the temporal window size that the filter
+                averages over. The gaussian_filter function requires a "sigma"
+                parameter giving the temporal standard deviation; it also takes
+                an optional "window_size" parameter.
+        """
+        ages, data = self.get_time_range(feature, age_feature=age_feature,
+            min_age=min_age, max_age=max_age, filter_valid=True) # No nans here
+        smoothed = []
+        for age_to_smooth in ages:
+            weights = filter(ages, age_to_smooth, **filter_params)
+            total_weight = weights.sum()
+            if total_weight == 0:
+                raise ValueError('Smoothing filter did not weight any data.')
+            smoothed.append(numpy.dot(data, weights / total_weight))
+        age_mask = numpy.isin(getattr(self.td, age_feature), ages)
+        smoothed_feature = numpy.array(getattr(self.td, feature))
+        smoothed_feature[age_mask] = smoothed
+        setattr(self.td, 'smoothed_' + feature, smoothed_feature)
+
     def merge_with(self, other):
         """Merge summary and timecourse data with another worm.
 
-        The other worm must have a matching name. If any data are in common
-        those data must match. Merging of timecourse data is supported in
-        all cases: when the timepoints completely or partially overlap, or are
-        disjoint.
+        Merging of timecourse data is supported in all cases: when the
+        timepoints completely or partially overlap, or are disjoint. The other
+        worm must have a matching name. If any timepoints are in common those
+        data must match. There is one exception: if one worm has
+        nan/empty-string values at a timepoint and another has
+        non-nan/empty-strings, the non-nan/empty values will be used.
 
         Note: only handles int/float/string data types. Any int data types will
         be converted to float in cases where timepoints do not fully overlap,
@@ -468,18 +555,29 @@ class Worm(object):
             ours_in_other = numpy.in1d(self.td.timepoint, other.td.timepoint, assume_unique=True)
             other_in_ours = numpy.in1d(other.td.timepoint, self.td.timepoint, assume_unique=True)
             for feature in both:
-                our_v = getattr(self.td, feature)
-                other_v = getattr(other.td, feature)
-                if not numpy.all(our_v[ours_in_other] == other_v[other_in_ours]):
-                    raise ValueError(f'worms to be merged have different values of {feature} for some timepoints that are in common')
+                our_v = numpy.asarray(getattr(self.td, feature))
+                other_v = numpy.asarray(getattr(other.td, feature))
+                ours_good = _valid_values(our_v)
+                others_good = _valid_values(other_v)
+                if numpy.any((our_v[ours_in_other] != other_v[other_in_ours]) &
+                   ours_good[ours_in_other] & others_good[other_in_ours]):
+                    # if there are any data values that (a) overlap, (b) compare as unequal and (c) are both non-nan,
+                    # then we have a data conflict
+                    raise ValueError(f'worms have different values of "{feature}" for one or more of the timepoints that are in common')
                 new_values = numpy.empty(len_new, dtype=numpy.promote_types(our_v.dtype, other_v.dtype))
-                new_values[our_mask] = our_v
-                new_values[other_mask] = other_v
+                if numpy.issubdtype(new_values.dtype, numpy.floating):
+                    new_values.fill(numpy.nan)
+                take_from_ours = our_mask.copy()
+                take_from_ours[our_mask] = ours_good # set mask false where ours has nan
+                new_values[take_from_ours] = our_v[ours_good]
+                take_from_other = other_mask.copy()
+                take_from_other[other_mask] = others_good # set mask false where other has nan
+                new_values[take_from_other] = other_v[others_good]
                 setattr(self.td, feature, new_values)
         self.td.timepoint = new_timepoints
 
     def _convert_values(self, src_td, feature, len_new, mask):
-        values = getattr(src_td, feature)
+        values = numpy.asarray(getattr(src_td, feature))
         if values.dtype.kind in 'SU': # string dtype
             dtype = values.dtype
         else:
@@ -490,6 +588,50 @@ class Worm(object):
             new_values[~mask] = numpy.nan
         setattr(self.td, feature, new_values)
 
+def _valid_values(array):
+    if numpy.issubdtype(array.dtype, numpy.floating):
+        return ~numpy.isnan(array)
+    elif array.dtype.kind == 'S':
+        return array != b''
+    elif array.dtype.kind == 'U':
+        return array != ''
+    else:
+        return numpy.ones(array.shape, dtype=bool)
+
+def gaussian_filter(ages, age_to_smooth, sigma, window_size=numpy.inf):
+    """Gaussian-weighted smoothing filter (Causal: does not use future data).
+
+    The filter returns the weights for each entry in the ages input, for the
+    given age_to_smooth.
+
+    Parameters:
+        ages: ages of the worm at each timepoint
+        age_to_smooth: age for which to calculate the smoothing weights.
+        sigma: temporal sigma for smoothing.
+        window_size: if specified, the number of hours in the past that should
+            be used in the weighting at all. (I.e. if specified, the result will
+            be a truncated gaussian weighting.)
+    """
+    time_delta = ages - age_to_smooth
+    weights = numpy.exp(-time_delta**2/(2*sigma))
+    ignore = (time_delta > 0) | (time_delta < -window_size)
+    weights[ignore] = 0
+    return weights
+
+def uniform_filter(ages, age_to_smooth, window_size):
+    """Uniform-weighted smoothing filter (Causal: does not use future data).
+
+    The filter returns a uniform (boxcar) filter over a specified range of past
+    data. That is, the smoothed value will simply be the (unweighted) average of
+    all the data point within the given window.
+
+    Parameters:
+        ages: ages of the worm at each timepoint
+        age_to_smooth: age for which to calculate the smoothing weights.
+        window_size: The number of hours in the past that should be averaged over.
+    """
+    time_delta = ages - age_to_smooth
+    return (time_delta <= 0) & (time_delta >= -window_size)
 
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
@@ -518,7 +660,7 @@ class Worms(collections.UserList):
         else:
             return self.data[i]
 
-    def read_summary_data(self, path, add_new=False, delimiter='\t', span_scale=1):
+    def read_summary_data(self, path, add_new=False, delimiter='\t', time_units='hours'):
         """Read in summary data (not timecourse data) for each worm.
 
         Summary statistics are read from columns in a delimited text file and
@@ -533,10 +675,17 @@ class Worms(collections.UserList):
                 does not match any existing worm names, create a new worm and
                 add it to this Worms list. If False, print a warning and ignore.
             delimiter: delimiter for input data file.
-            span_scale: if any data column name ends with 'span', the value will
-                be multiplied by span_scale. (Useful e.g. for converting hours
-                into days.)
+            time_units: the unit of time for the values in any column with a
+                name ending in 'span'. All time units will be converted into
+                hours internally. (The rescale_time() method can be used to
+                change units later, but this is at your own risk: all
+                time-based analysis code can and should assume time units of
+                hours.)
+                Must be one of 'days', 'hours', 'minutes', or 'seconds'.
         """
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         named_worms = {worm.name: worm for worm in self}
         header, data = datafile.read_delimited(path, delimiter=delimiter)
         header = [colname.replace(' ', '_') for colname in header]
@@ -552,7 +701,7 @@ class Worms(collections.UserList):
                 worm = named_worms[name]
             for feature, val in zip(header[1:], rest):
                 if feature.endswith('span'):
-                    val *= span_scale
+                    val *= time_scale
                 setattr(worm, feature, val)
 
     def write_summary_data(self, path, features=None, delimiter='\t', error_on_missing=True):
@@ -1124,7 +1273,8 @@ class Worms(collections.UserList):
             out.append((x, y, color))
         return out
 
-    def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf, age_feature='age'):
+    def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf,
+        age_feature='age', time_units='hours'):
         """Plot values of a given feature for each worm, colored by lifespan.
 
         Parameters:
@@ -1142,11 +1292,16 @@ class Worms(collections.UserList):
                 also be used. If this is a function, it will be called as
                 age_feature(worm) to generate the ages to examine (see
                 examples in Worm.get_time_range).
+            time_units: one of "days", "hours", "minutes", or "seconds",
+                representing the units in which the time scale should be plotted.
         """
         import matplotlib.pyplot as plt
+        if time_units not in TIME_UNITS:
+            raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
+        time_scale = TIME_UNITS[time_units]
         plt.clf()
         for x, y, c in self._timecourse_plot_data(feature, min_age, max_age, age_feature):
-            plt.plot(x, y, color=c)
+            plt.plot(x/time_scale, y, color=c)
 
 class _TimecourseData(object):
     def __repr__(self):
