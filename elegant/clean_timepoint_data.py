@@ -85,7 +85,7 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     """
 
     experiment_root = pathlib.Path(experiment_root)
-    positions = [metadata_file.parent for metadata_file in sorted(experiment_root.glob('*/position_metadata.json'))]
+    positions = [metadata_file.parent.name for metadata_file in sorted(experiment_root.glob('*/position_metadata.json'))]
 
     for position in positions:
         remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=dry_run)
