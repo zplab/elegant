@@ -106,10 +106,7 @@ class PoseAnnotation(annotator.AnnotationField):
         self.pca_button.clicked.connect(self.pca_smooth_widths)
         self._add_row(layout, Qt.QLabel('Widths:'), self.default_button, self.pca_button)
 
-<<<<<<< HEAD
         self.auto_center_button = Qt.QPushButton('All')
-=======
->>>>>>> 41c43d3e80fea885ab4f8ec948c4fde311618c41
         self.auto_center_button.clicked.connect(self.auto_center)
         self.auto_widths_button = Qt.QPushButton('Widths')
         self.auto_widths_button.clicked.connect(self.auto_widths)
