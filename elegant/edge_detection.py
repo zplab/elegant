@@ -7,6 +7,8 @@ from zplib import pca
 from zplib.image import pyramid
 from zplib.image import colorize
 from zplib.curve import interpolate
+import celiagg
+from ris_widget import histogram_mask
 
 from skimage import graph
 from elegant import worm_spline
