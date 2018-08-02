@@ -92,7 +92,7 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
             timepoints[timepoint_name] = channel_images
     for position_name, timepoints in list(positions.items()):
         if len(timepoints) == 0:
-            del positions['position_name']
+            del positions[position_name]
     return positions
 
 def scan_positions(experiment_root, position_filter, channels='bf', image_ext='png'):
