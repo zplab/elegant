@@ -91,7 +91,6 @@ def edge_coordinates(image, avg_width_tck, mag='5x'):
         xb, bottom_widths = find_edges(bottom_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
     else:
         ggm_sigma, sig_per, sig_growth_rate, alpha, mcp_alpha = params['5x']
-        print(params['5x'])
         xt, top_widths = find_edges(top_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
         xb, bottom_widths = find_edges(bottom_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
 
@@ -214,7 +213,6 @@ def scale_image(image, mag='5x'):
         bf8 = colorize.scale(bf, min=600, max=26000, gamma=1, output_max=255)
 
     else:
-        print('5x')
         mode = np.bincount(image.flat)[1:].argmax()+1
         bf = image.astype(np.float32)
         bf -= 200
