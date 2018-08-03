@@ -45,13 +45,10 @@ def subregion_measures(image, mask):
         data:
             [sum, mean, median, percentile_95, percentile_99,
             expression_sum, expression_mean, expression_median,
-            expression_percentile_95, expression_percentile_99,
             expression_area_fraction,
             high_expression_sum, high_expression_mean, high_expression_median,
-            high_expression_percentile_95, high_expression_percentile_99,
             high_expression_area_fraction,
-            over_99_sum, over_99_mean, over_99_median,
-            over_99_percentile_95, over_99_percentile_99]
+            over_99_sum, over_99_mean, over_99_median]
             where the 'area_fraction' measurements represent the fraction of the
             mask area encompassed by the expression and high_expression areas.
         region_masks: [expression_mask, high_expression_mask, over_99_mask]
@@ -72,7 +69,7 @@ def subregion_measures(image, mask):
     high_expression_measures.append(high_expression_area_fraction)
     percentile_99 = mask_measures[-1]
     over_99_mask = (image > percentile_99) & mask
-    over_99_measures = region_measures(image, expression_mask)
+    over_99_measures = region_measures(image, expression_mask)[:3]
     data = mask_measures + expression_measures + high_expression_measures + over_99_measures
     region_masks = [expression_mask, high_expression_mask, over_99_mask]
     return data, region_masks
