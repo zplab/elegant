@@ -19,7 +19,6 @@ from . import measure_fluor
 
 DERIVED_ROOT = 'derived_data'
 
-
 def update_annotations(experiment_root):
     """Run prior to manually annotating an experiment directory, in order to
     update the annotations dictionaries with all relevant data that can be
@@ -47,7 +46,7 @@ def annotate(experiment_root, annotators=[], position_annotators=[]):
             with parameters:
                 experiment_root: as above
                 position: name of position
-                metadata: metadata dict  from 'experiment_metadata.json'
+                metadata: metadata dict from 'experiment_metadata.json'
                 annotations: annotation dictionary for the position
 
     """
