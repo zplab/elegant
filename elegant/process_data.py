@@ -428,7 +428,7 @@ class FluorMeasurements:
         flatfield = freeimage.read(position_root.parent / 'calibrations' / f'{timepoint} fl_flatfield.tiff')
         center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
         if center_tck is None or width_tck is None:
-            mask_file = derived_root / 'mask' / position_root.name / f'{timepoint} {mask_name}.png'
+            mask_file = derived_root / 'mask' / position_root.name / f'{timepoint} {self.mask_name}.png'
             if mask_file.exists():
                 print(f'No pose data found for {position_root.name} at {timepoint}; falling back to mask file.')
             else:
