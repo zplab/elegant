@@ -13,7 +13,7 @@ from ris_widget import histogram_mask
 from skimage import graph
 from elegant import worm_spline
 
-def edge_detection(image, center_tck, width_tck, avg_width_tck, mag='5x'):
+def edge_detection(image, center_tck, width_tck, avg_width_tck, objective=5):
     """Main function to detect the edges of the worm. Returns a new center_tck
     and width_tck in the lab frame of reference
 
@@ -33,7 +33,7 @@ def edge_detection(image, center_tck, width_tck, avg_width_tck, mag='5x'):
             edges.
     """
     #normalize image
-    image = scale_image(image, mag=mag)
+    image = scale_image(image, objective=objective)
     warped_image = worm_spline.to_worm_frame(image, center_tck, width_tck=width_tck)
     center_coordinates, width_coordinates = edge_coordinates(warped_image, avg_width_tck)
     new_center_tck, new_width_tck = new_tcks(center_coordinates, width_coordinates, warped_image.shape, center_tck)
@@ -64,7 +64,7 @@ def new_tcks(center_coordinates, width_coordinates, worm_image_shape, center_tck
     return(new_center_tck, new_width_tck)
 
 
-def edge_coordinates(image, avg_width_tck, mag='5x'):
+def edge_coordinates(image, avg_width_tck, objective=5):
     """From an image of a straightened worm, find the edges of the worm.
     It is assumed that the centerline of the worm is in the center of the image
     (NOTE: this is the way that elegant generates the straightened worm panel in the gui)
@@ -82,19 +82,14 @@ def edge_coordinates(image, avg_width_tck, mag='5x'):
         width_coordinates: shape (num_coords, 2) list of coordinates that define the widths
             in the worm frame of reference
     """
-    params = {'10x':[1, 56.5, 5, 2, 3], '5x':[1, 61, 2, 1, 1]} #dictionary of the parameters from the optimizer
+    #dictionary of the parameters from the optimizer
+    params = {10: dict(ggm_sigma=1, sig_per=56.5, sig_growth_rate=5, alpha=2, mcp_alpha=3), 5: dict(ggm_sigma=1, sig_per=61, sig_growth_rate=2, alpha=1, mcp_alpha=1)}
     #break up the image into top and bottom parts to find the widths on each side
     top_image = np.flip(image[:,:int(image.shape[1]/2)], axis =1)
     bottom_image = image[:,int(image.shape[1]/2):]
 
-    if mag is '10x':
-        ggm_sigma, sig_per, sig_growth_rate, alpha, mcp_alpha = params['10x']
-        xt, top_widths = find_edges(top_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
-        xb, bottom_widths = find_edges(bottom_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
-    else:
-        ggm_sigma, sig_per, sig_growth_rate, alpha, mcp_alpha = params['5x']
-        xt, top_widths = find_edges(top_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
-        xb, bottom_widths = find_edges(bottom_image, avg_width_tck, ggm_sigma=ggm_sigma, sig_per=sig_per, sig_growth_rate=sig_growth_rate, alpha=alpha, mcp_alpha=mcp_alpha)
+    xt, top_widths = find_edges(top_image, avg_width_tck, **params[objective])
+    xb, bottom_widths = find_edges(bottom_image, avg_width_tck, **params[objective])
 
     top_widths = top_widths.astype(np.float)
     bottom_widths = bottom_widths.astype(np.float)
@@ -193,7 +188,7 @@ def tenX_mask(img_shape):
     """
     return circle_mask(*histogram_mask.HistogramMask.DEFAULT_MASKS[0.7], shape=img_shape)
 
-def scale_image(image, mag='5x'):
+def scale_image(image, objective=5):
     """Scale images based on the mode
 
     Parameters:
@@ -205,21 +200,19 @@ def scale_image(image, mag='5x'):
     Returns:
         bf8: uint8 ndarray of the normalized image
     """
-    if mag is '10x':
+    if objective==10:
         mask = tenX_mask(image.shape).astype(bool)
-        bf = image[mask]
-        mode = np.bincount(bf.flat)[1:].argmax()+1
-        bf = image.astype(np.float32)
-        bf -= 200
-        bf *= (24000-200) / (mode-200)
-        bf8 = colorize.scale(bf, min=600, max=26000, gamma=1, output_max=255)
-
+        pixels = image[mask]
+        gamma = 1
     else:
-        mode = np.bincount(image.flat)[1:].argmax()+1
-        bf = image.astype(np.float32)
-        bf -= 200
-        bf *= (24000-200) / (mode-200)
-        bf8 = colorize.scale(bf, min=600, max=26000, gamma=0.72, output_max=255)
+        pixels = image.flat
+        gamma = 0.72
+
+    mode = np.bincount(pixels)[1:].argmax()+1
+    bf = image.astype(np.float32)
+    bf -= 200
+    bf *= (24000-200) / (mode-200)
+    bf8 = colorize.scale(bf, min=600, max=26000, gamma=gamma, output_max=255)
             
     return bf8
 

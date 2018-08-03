@@ -15,7 +15,7 @@ from .. import edge_detection
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
 
-    def __init__(self, ris_widget, name='pose', mean_widths=None, width_pca_basis=None, mag='5x'):
+    def __init__(self, ris_widget, name='pose', mean_widths=None, width_pca_basis=None, objective=5):
         """Annotation field to record worm positions.
 
         Shortcuts:
@@ -61,7 +61,7 @@ class PoseAnnotation(annotator.AnnotationField):
             if not numpy.allclose((width_pca_basis**2).sum(axis=1), numpy.ones(len(width_pca_basis))):
                 raise ValueError('a unit-length (non-normalized) PCA basis must be provided')
         self.width_pca_basis = width_pca_basis
-        self.mag = mag
+        self.objective = objective
         super().__init__(name)
 
     def init_widget(self):
@@ -233,7 +233,7 @@ class PoseAnnotation(annotator.AnnotationField):
             center_tck=self.outline.center_spline.geometry,
             width_tck=self.outline.width_spline.geometry,
             avg_width_tck=self.get_default_widths(), 
-            mag=self.mag)
+            objective=self.objective)
         smooth_width_tck = self._pca_smooth_widths(width_tck)
         if smooth_width_tck is not None:
             width_tck = smooth_width_tck
