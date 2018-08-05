@@ -439,8 +439,9 @@ class FluorMeasurements:
             # NB: it's WAY faster to regenerate the mask from the splines than to read it in,
             # even if the file is cached in RAM. Strange but true.
             mask = worm_spline.lab_frame_mask(center_tck, width_tck, image.shape)
+        if mask.sum() == 0:
+            print(f'No worm region defined for {position_root.name} at {timepoint} (empty mask or broken pose annotation?)')
 
-        mask = mask > 0
         image = image.astype(numpy.float32) * flatfield
         data, region_masks = measure_fluor.subregion_measures(image, mask)
 

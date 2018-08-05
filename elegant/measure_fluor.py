@@ -5,19 +5,18 @@ import numpy
 from zplib.scalar_stats import mcd
 from zplib.image import colorize
 
-def region_measures(image, mask):
-    """Measure several basic region properties of a masked image.
+def region_measures(pixels):
+    """Measure several basic region properties of a set of image pixels.
 
     Parameters:
-        image, mask: numpy.ndarrays of same shape.
+        pixels: flat list of image pixels.
 
     Returns: sum, mean, median, percentile_95, percentile_99
         representing the sum, mean, etc. of image pixels in non-zero region
         of the mask.
     """
-    if mask.dtype != bool:
-        mask = mask > 0
-    pixels = image[mask]
+    if len(pixels) == 0:
+        return [numpy.nan] * 5
     sum = pixels.sum()
     mean = pixels.mean()
     median, percentile_95, percentile_99 = numpy.percentile(pixels, [50, 95, 99])
@@ -54,22 +53,24 @@ def subregion_measures(image, mask):
         region_masks: [expression_mask, high_expression_mask, over_99_mask]
             where each is a mask defining the sub-region of the mask.
     """
-    mask_measures = region_measures(image, mask)
-    mean = mask_measures[1]
+    if mask.dtype != bool:
+        mask = mask > 0
     pixels = image[mask]
+    mask_measures = region_measures(pixels)
+    mean = mask_measures[1]
     area = pixels.sum()
     low_mean, low_std = mcd.robust_mean_std(pixels[pixels < mean], 0.5)
     expression_mask = (image > (low_mean + 2.5*low_std)) & mask
-    expression_measures = region_measures(image, expression_mask)[:3]
+    expression_measures = region_measures(image[expression_mask])[:3]
     expression_area_fraction = expression_mask.sum() / area
     expression_measures.append(expression_area_fraction)
     high_expression_mask = (image > (low_mean + 6*low_std)) & mask
-    high_expression_measures = region_measures(image, expression_mask)[:3]
+    high_expression_measures = region_measures(image[high_expression_mask])[:3]
     high_expression_area_fraction = high_expression_mask.sum() / area
     high_expression_measures.append(high_expression_area_fraction)
     percentile_99 = mask_measures[-1]
     over_99_mask = (image > percentile_99) & mask
-    over_99_measures = region_measures(image, expression_mask)[:3]
+    over_99_measures = region_measures(image[over_99_mask])[:3]
     data = mask_measures + expression_measures + high_expression_measures + over_99_measures
     region_masks = [expression_mask, high_expression_mask, over_99_mask]
     return data, region_masks
