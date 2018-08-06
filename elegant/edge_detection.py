@@ -148,7 +148,7 @@ def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2,
     
     #set start and end points for the traceback
     start = [(len(pen_widths)-1, int(pen_widths[-1]))]
-    end = [(0, int(pen_widths[0])), (0, 0), (0,1),(0,2), (0,3)]
+    end = [(0, 0), (0,1),(0,2), (0,3)]
     #start = (0, int(pen_widths[0]))
     #end = (len(pen_widths)-1, int(pen_widths[-1]))
 
@@ -166,11 +166,10 @@ def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2,
         if cost<min_cost:
             min_end = e
             min_cost = cost
-
     route = mcp.traceback(min_end)
     #we started at the tail to incorporate different noses, so now we need to 
     #reverse the route to make it the correct direction
-    route = [::-1]
+    route = route[::-1]
     x,y = np.transpose(route)
     return (x*2, y*2) #multiply by 2 to account for downsampling
 
