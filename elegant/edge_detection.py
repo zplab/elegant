@@ -147,15 +147,19 @@ def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2,
     new_costs = gradient+penalty
     
     #set start and end points for the traceback
-    start = (0, int(pen_widths[0]))
-    end = (len(pen_widths)-1, int(pen_widths[-1]))
+    #we have multiple start sites in case the head is not perfectly straight
+    start = [(0,0), (0,1), (0,2), (0,3), (0,4), (0,5)] 
+    end = [(len(pen_widths)-1, int(pen_widths[-1]))]
 
     #begin edge detection
     offsets= [(1,-1),(1,0),(1,1)]
     mcp = Smooth_MCP(new_costs, mcp_alpha, offsets=offsets)
-    mcp.find_costs([start], [end])
-    route = mcp.traceback(end)
+    costs, tb = mcp.find_costs(start, end)
 
+    route = mcp.traceback(end[0])
+    #we started at the tail to incorporate different noses, so now we need to 
+    #reverse the route to make it the correct direction
+    #route = route[::-1]
     x,y = np.transpose(route)
     return (x*2, y*2) #multiply by 2 to account for downsampling
 
