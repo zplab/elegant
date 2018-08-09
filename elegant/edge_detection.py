@@ -14,7 +14,7 @@ from . import process_images
 # dictionary of the parameters found by optimization
 OBJ_PARAMS = {
     10: dict(image_gamma=1, downscale=2, gradient_sigma=1, sigmoid_midpoint=55,
-        sigmoid_growth_rate=1280, edge_weight=20, roughness_penalty=3, post_smoothing=2),
+        sigmoid_growth_rate=1280, edge_weight=20, roughness_penalty=2, post_smoothing=2),
     5: dict(image_gamma=0.72, downscale=2, gradient_sigma=1, sigmoid_midpoint=60,
         sigmoid_growth_rate=512, edge_weight=40, roughness_penalty=1, post_smoothing=2)
 }
@@ -56,12 +56,24 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
         gradient_sigma: sigma for gaussian gradient to find worm edges
         sigmoid_midpoint: midpoint of edge_highlighting sigmoid function for
             gradient values, expressed as a percentile of the gradient value
-            over the whole image.
-        sigmoid_growth_rate: steepness of the sigmoid function.
+            over the whole image. (Somewhere around the 50th percentile
+            seems generally good.)
+        sigmoid_growth_rate: steepness of the sigmoid function. (The gradient is
+            over an image rescaled from 0-1; such images have a max gradient
+            in the worm region in the range 0.1-0.2. So the range of the sigmoid
+            function is generally 0-0.2 or so; getting a steep curve requires
+            growth rates in the 500-1000 range.)
         edge_weight: how much to weight image edge strength vs. distance from
-            the average widths in the cost function.
+            the average widths in the cost function. (The edge part of the
+            cost function goes from 0 to 1, and the distance part goes from
+            0 to the maximum pixel distance from the average edge; typically
+            15 or so for a 2x downscaled image. So to have both terms equally
+            weighted, edge_weight should be around 10-20.)
         roughness_penalty: how much to penalize diagonal steps vs. straight
-            steps in the edge tracing (to penalize jagged edges)
+            steps in the edge tracing (to penalize jagged edges). The penalty
+            is multiplicative and scaled by the length of the step: a value of 1
+            doesn't penalize diagonal steps, while a value of 2 means that a
+            1-pixel-up diagonal step costs 2*sqrt(2) times more.
         post_smoothing: spline smoothing factor for re-fit centerline.
 
     Returns: (cost_image, new_center_tck, new_width_tck)
@@ -75,11 +87,10 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
 
     # trace edges to calculate new centerline and widths
     center_coordinates, widths = edge_coordinates(cost_image, roughness_penalty)
-    new_center_coordinates = worm_spline.coordinates_to_lab_frame(center_coordinates, cost_image.shape, center_tck, zoom=1/downscale)
-    #generate new splines
-    new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=post_smoothing*len(new_center_coordinates))
+    lab_center_coordinates = worm_spline.coordinates_to_lab_frame(center_coordinates, cost_image.shape, center_tck, zoom=1/downscale)
+    new_center_tck = interpolate.fit_spline(lab_center_coordinates, smoothing=post_smoothing*len(new_center_coordinates))
     x = numpy.linspace(0, 1, len(widths))
-    # don't forget to expand widths to account for downsampling
+    # NB: expand widths to account for downsampling
     new_width_tck = interpolate.fit_nonparametric_spline(x, widths*downscale, smoothing=post_smoothing*len(widths))
     return cost_image, new_center_tck, new_width_tck
 
@@ -201,5 +212,6 @@ class _SmoothMCP(graph.MCP_Flexible):
         self.roughness_penalty = roughness_penalty
 
     def travel_cost(self, old_cost, new_cost, offset_length):
-        # Make longer (i.e. more diagonal) steps cost more
-        return self.roughness_penalty*(new_cost + abs(offset_length))
+        # Make longer (i.e. more diagonal) steps cost more; horizontal (length=1) moves are free
+        penalty = 1 if offset_length == 1 else self.roughness_penalty * offset_length
+        return new_cost * penalty
