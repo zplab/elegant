@@ -11,6 +11,7 @@ from skimage import graph
 import celiagg
 from zplib.curve import spline_geometry
 from zplib.curve import interpolate
+from zplib.image import draw
 
 
 def pose_from_mask(mask, smoothing=1):
@@ -419,7 +420,7 @@ def lab_frame_mask(center_tck, width_tck, image_shape, num_spline_points=None, a
     """
     path = celiagg.Path()
     path.lines(spline_geometry.outline(center_tck, width_tck, num_points=num_spline_points)[-1])
-    return _celiagg_draw_mask(image_shape, path, antialias)
+    return draw.draw_mask(image_shape, path, antialias)
 
 def worm_frame_mask(width_tck, image_shape, num_spline_points=None, antialias=False, zoom=1):
     """Use a centerline and width spline to draw a worm mask image in the worm frame of reference.
@@ -450,17 +451,7 @@ def worm_frame_mask(width_tck, image_shape, num_spline_points=None, antialias=Fa
     bottom = numpy.transpose([x_vals, centerline_y + widths])[::-1]
     path = celiagg.Path()
     path.lines(numpy.concatenate([top, bottom]))
-    return _celiagg_draw_mask(image_shape, path, antialias)
-
-def _celiagg_draw_mask(image_shape, path, antialias):
-    image = numpy.zeros(image_shape, dtype=numpy.uint8, order='F')
-    # NB celiagg uses (h, w) C-order convention for image shapes
-    canvas = celiagg.CanvasG8(image.T)
-    state = celiagg.GraphicsState(drawing_mode=celiagg.DrawingMode.DrawFill, anti_aliased=antialias)
-    fill = celiagg.SolidPaint(1,1,1)
-    transform = celiagg.Transform()
-    canvas.draw_shape(path, transform, state, fill=fill)
-    return image
+    return draw.draw_mask(image_shape, path, antialias)
 
 def longitudinal_warp_spline(t_in, t_out, center_tck, width_tck=None):
     """Transform a worm spline by longitudinally compressing/expanding it.
@@ -515,3 +506,9 @@ def longitudinal_warp_spline(t_in, t_out, center_tck, width_tck=None):
         new_t = monotonic_interpolator(t)
         width_tck = new_t, c, k
     return center_tck, width_tck
+
+
+def _celiagg_draw_mask(image_shape, path, antialias):
+    import warnings
+    warnings.warn('_celiagg_draw_mask() is deprecated and has been moved to zplib.image.draw.draw_mask().', DeprecationWarning)
+    return draw.draw_mask(image_shape, path, antialias)

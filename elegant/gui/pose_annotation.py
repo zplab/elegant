@@ -15,7 +15,7 @@ from .. import edge_detection
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
 
-    def __init__(self, ris_widget, name='pose', mean_widths=None, width_pca_basis=None, objective=5):
+    def __init__(self, ris_widget, name='pose', mean_widths=None, width_pca_basis=None, objective=5, optocoupler=1):
         """Annotation field to record worm positions.
 
         Shortcuts:
@@ -44,6 +44,8 @@ class PoseAnnotation(annotator.AnnotationField):
                 basis for the widths, where the number of basis vectors is n and
                 their dimensionality is m. Used to perform PCA-based smoothing of
                 the width profile by projecting a given profile into the PCA basis.
+            objective: magnification (as a float) of the objective used
+            optocoupler: magnification (as a float) of the optocoupler used
         """
         self.ris_widget = ris_widget
         self.outline = spline_outline.SplineOutline(ris_widget, Qt.QColor(0, 255, 0, 128))
@@ -62,6 +64,7 @@ class PoseAnnotation(annotator.AnnotationField):
                 raise ValueError('a unit-length (non-normalized) PCA basis must be provided')
         self.width_pca_basis = width_pca_basis
         self.objective = objective
+        self.optocoupler = optocoupler
         super().__init__(name)
 
     def init_widget(self):
@@ -228,12 +231,12 @@ class PoseAnnotation(annotator.AnnotationField):
         self.outline._geometry_changed()
 
     def _fit_to_image(self):
-        center_tck, width_tck = edge_detection.edge_detection(
+        center_tck, width_tck = edge_detection.detect_edges(
             image=self.ris_widget.image.data,
             center_tck=self.outline.center_spline.geometry,
             width_tck=self.outline.width_spline.geometry,
-            avg_width_tck=self.get_default_widths(), 
-            objective=self.objective)
+            avg_width_tck=self.get_default_widths(),
+            objective=self.objective, optocoupler=self.optocoupler)
         smooth_width_tck = self._pca_smooth_widths(width_tck)
         if smooth_width_tck is not None:
             width_tck = smooth_width_tck

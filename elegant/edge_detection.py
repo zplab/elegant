@@ -1,229 +1,203 @@
 import numpy
-
 from scipy import ndimage
+from skimage import graph
 
 from zplib.image import pyramid
 from zplib.image import colorize
 from zplib.curve import interpolate
-import celiagg
-from ris_widget import histogram_mask
 
-from skimage import graph
-from elegant import worm_spline
+from . import worm_spline
+from . import process_images
 
-def edge_detection(image, center_tck, width_tck, avg_width_tck, objective=5):
-    """Main function to detect the edges of the worm. Returns a new center_tck
-    and width_tck in the lab frame of reference
+# dictionary of the parameters found by optimization
+OBJ_PARAMS = {
+    10: dict(image_gamma=1, downscale=2, gradient_sigma=1, sigmoid_midpoint=55,
+        sigmoid_growth_rate=1280, edge_weight=20, roughness_penalty=3, post_smoothing=2),
+    5: dict(image_gamma=0.72, downscale=2, gradient_sigma=1, sigmoid_midpoint=60,
+        sigmoid_growth_rate=512, edge_weight=40, roughness_penalty=1, post_smoothing=2)
+}
+
+def detect_edges(image, center_tck, width_tck, avg_width_tck, objective=5, optocoupler=1):
+    """Trace the edges of a worm and return a new center_tck and width_tck.
 
     Parameters:
         image: ndarray of the brightfield image
-        center_tck: centerline spline defining the pose of the worm in the lab
-            frame.
-        width_tck: width spline defining the distance from centerline to worm
-            edges.
-        avg_width_tck: width spline defining the average distance from the centerline
-            to the worm edges (This is taken from the pca things we did earlier)
+        center_tck: spline defining the pose of the worm.
+        width_tck: spline defining the distance from centerline to worm edges.
+        avg_width_tck: width spline for an average worm (of the given age, etc.)
+        objective: objective magnification (to look up correct parameters with)
+        optocoupler: optocoupler magnification (to correctly calculate the image
+            vignette)
 
-    Returns:
-        new_center_tck: centerline spline defining the new pose of the worm in the lab
-            frame.
-        new_width_tck: width spline defining the distance from centerline to worm
-            edges.
+    Returns: (new_center_tck, new_width_tck)
+        new_center_tck: new centerline spline
+        new_width_tck: new width spline
     """
-    #normalize image
-    image = scale_image(image, objective=objective)
-    warped_image = worm_spline.to_worm_frame(image, center_tck, width_tck=width_tck)
-    center_coordinates, width_coordinates = edge_coordinates(warped_image, avg_width_tck)
-    new_center_tck, new_width_tck = new_tcks(center_coordinates, width_coordinates, warped_image.shape, center_tck)
+    cost_image, new_center_tck, new_width_tck = _detect_edges(image, optocoupler,
+        center_tck, width_tck, avg_width_tck, **OBJ_PARAMS[objective])
+    return new_center_tck, new_width_tck
 
-    return(new_center_tck, new_width_tck)
-
-def new_tcks(center_coordinates, width_coordinates, worm_image_shape, center_tck):
-    """From the coordinates in the worm frame generate new center and width tcks
-    in the lab frame.
+def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
+        image_gamma, downscale, gradient_sigma, sigmoid_midpoint,
+        sigmoid_growth_rate, edge_weight, roughness_penalty, post_smoothing):
+    """Trace the edges of a worm and return a new center_tck and width_tck.
 
     Parameters:
-        center_coordinates: shape (num_coords, 2) list of coordinates that define the centerline
-            in the worm frame of reference
-        width_coordinates: shape (num_coords, 2) list of coordinates that define the widths
-            in the worm frame of reference
-        worm_image_shape: shape of worm image in which the coordinates are defined
-        center_tck: centerline spline defining the pose of the worm in the lab
-            frame.
+        image: ndarray of the brightfield image
+        optocoupler: optocoupler magnification (to correctly calculate the image
+            vignette)
+        center_tck: spline defining the pose of the worm.
+        width_tck: spline defining the distance from centerline to worm edges.
+        avg_width_tck: width spline for an average worm (of the given age, etc.)
+        image_gamma: gamma value for intensity transform to highlight worm edges
+        downscale: factor by which to downsample the image
+        gradient_sigma: sigma for gaussian gradient to find worm edges
+        sigmoid_midpoint: midpoint of edge_highlighting sigmoid function for
+            gradient values, expressed as a percentile of the gradient value
+            over the whole image.
+        sigmoid_growth_rate: steepness of the sigmoid function.
+        edge_weight: how much to weight image edge strength vs. distance from
+            the average widths in the cost function.
+        roughness_penalty: how much to penalize diagonal steps vs. straight
+            steps in the edge tracing (to penalize jagged edges)
+        post_smoothing: spline smoothing factor for re-fit centerline.
+
+    Returns: (cost_image, new_center_tck, new_width_tck)
+        cost_image: image defining the cost function for edge tracing
+        new_center_tck: new centerline spline
+        new_width_tck: new width spline
     """
-    #get new coordinates for the centerline in the lab frame
-    new_center_coordinates = worm_spline.coordinates_to_lab_frame(center_coordinates, worm_image_shape, center_tck)
+    cost_image = get_cost_image(image, optocoupler, image_gamma, center_tck,
+        width_tck, avg_width_tck, downscale, gradient_sigma, sigmoid_midpoint,
+        sigmoid_growth_rate, edge_weight)
+
+    # trace edges to calculate new centerline and widths
+    center_coordinates, widths = edge_coordinates(cost_image, roughness_penalty)
+    new_center_coordinates = worm_spline.coordinates_to_lab_frame(center_coordinates, cost_image.shape, center_tck, zoom=1/downscale)
     #generate new splines
-    _,widths = width_coordinates.T
-    new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=1*len(new_center_coordinates))
-    x = numpy.linspace(0,1, len(widths))
-    new_width_tck = interpolate.fit_nonparametric_spline(x, widths, smoothing=1*len(new_center_coordinates))
+    new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=post_smoothing*len(new_center_coordinates))
+    x = numpy.linspace(0, 1, len(widths))
+    # don't forget to expand widths to account for downsampling
+    new_width_tck = interpolate.fit_nonparametric_spline(x, widths*downscale, smoothing=len(widths))
+    return cost_image, new_center_tck, new_width_tck
 
-    return(new_center_tck, new_width_tck)
-
-
-def edge_coordinates(image, avg_width_tck, objective=5):
-    """From an image of a straightened worm, find the edges of the worm.
-    It is assumed that the centerline of the worm is in the center of the image
-    (NOTE: this is the way that elegant generates the straightened worm panel in the gui)
+def get_cost_image(image, optocoupler, image_gamma, center_tck, width_tck, avg_width_tck,
+        downscale, gradient_sigma, sigmoid_midpoint, sigmoid_growth_rate, edge_weight):
+    """Trace the edges of a worm and return a new center_tck and width_tck.
 
     Parameters:
-        image: ndarray of the straightened worm image
-        avg_width_tck: width spline defining the average distance from the centerline
-            to the worm edges (This is taken from the pca things we did earlier)
-        mag: string indicating whether the images are from 10x corrals or 5x corrals. This is to
-            ensure the right parameters are used in edge finding
+        image: ndarray of the brightfield image
+        optocoupler: optocoupler magnification (to correctly calculate the image
+            vignette)
+        center_tck: spline defining the pose of the worm.
+        width_tck: spline defining the distance from centerline to worm edges.
+        avg_width_tck: width spline for an average worm (of the given age, etc.)
+        image_gamma: gamma value for intensity transform to highlight worm edges
+        downscale: factor by which to downsample the image
+        gradient_sigma: sigma for gaussian gradient to find worm edges
+        sigmoid_midpoint: midpoint of edge_highlighting sigmoid function for
+            gradient values, expressed as a percentile of the gradient value
+            over the whole image.
+        sigmoid_growth_rate: steepness of the sigmoid function.
+        edge_weight: how much to weight image edge strength vs. distance from
+            the average widths in the cost function.
 
-    Returns:
-        center_coordinates: shape (num_coords, 2) list of coordinates that define the centerline
-            in the worm frame of reference
-        width_coordinates: shape (num_coords, 2) list of coordinates that define the widths
-            in the worm frame of reference
+    Returns: image defining the cost function for edge tracing
     """
-    #dictionary of the parameters from the optimizer
-    params = {10: dict(ggm_sigma=1, sig_per=56.5, sig_growth_rate=5, alpha=2, mcp_alpha=3), 5: dict(ggm_sigma=1, sig_per=61, sig_growth_rate=2, alpha=1, mcp_alpha=1)}
-    #break up the image into top and bottom parts to find the widths on each side
-    top_image = numpy.flip(image[:,:int(image.shape[1]/2)], axis=1)
-    bottom_image = image[:,int(image.shape[1]/2):]
+    # normalize, warp, and downsample image
+    image = process_images.pin_image_mode(image, optocoupler=optocoupler)
+    image = colorize.scale(image, min=600, max=26000, gamma=image_gamma, output_max=1)
+    warped_image = worm_spline.to_worm_frame(image, center_tck, width_tck)
+    small_warped = pyramid.pyr_down(warped_image, downscale=downscale)
 
-    xt, top_widths = find_edges(top_image, avg_width_tck, **params[objective])
-    xb, bottom_widths = find_edges(bottom_image, avg_width_tck, **params[objective])
+    # calculate the edge costs
+    gradient = ndimage.gaussian_gradient_magnitude(small_warped, gradient_sigma)
+    gradient = sigmoid(gradient, numpy.percentile(gradient, sigmoid_midpoint), sigmoid_growth_rate)
+    gradient = gradient.max() - abs(gradient)
 
-    top_widths = top_widths.astype(numpy.float)
-    bottom_widths = bottom_widths.astype(numpy.float)
+    # penalize finding edges away from the average width along the worm
+    average_widths = (interpolate.spline_interpolate(avg_width_tck, small_warped.shape[0])) / downscale
+    distance_from_average = abs(numpy.subtract.outer(average_widths, numpy.arange(0, small_warped.shape[1])))
+    return edge_weight * gradient + distance_from_average
 
-    #need to account for the top and bottom splitting sincethe centerline is exactly
-    #in the middle of the pixels, we need to add 0.5 to the widths
-    if (image.shape[1]/2) % 2 == 0:
+def sigmoid(x, x0, k):
+    """Sigmoid function (logistic): https://en.wikipedia.org/wiki/Logistic_function
+    Returns result in range [0, 1]
+    """
+    return 1 / (1 + numpy.exp(-k * (x - x0)))
+
+def edge_coordinates(cost_image, roughness_penalty):
+    """Trace through a cost image to find the lowest-cost worm edges.
+
+    It is assumed that the centerline of the worm is approximately along the
+    center of the cost image.
+
+    Parameters:
+        cost_image: image defining the cost function for tracing edges.
+        roughness_penalty: how much to penalize diagonal steps vs. straight
+            steps in the edge tracing (to penalize jagged edges).
+
+    Returns: (center_coordinates, new_widths)
+        center_coordinates: shape (cost_image.shape[0], 2) array of coordinates
+            defining the new centerline in the cost image.
+        new_widths: array (of length cost_image.shape[0]) defining the widths
+            at each point along the centerline.
+    """
+    # break up the image into top and bottom parts to find the widths on each side
+    centerline_index = (cost_image.shape[1] - 1) / 2 # may fall at a non-integer pixel
+    # the below makes sure that odd-height images get the centerline included on
+    # both the top and bottom half
+    top_image = cost_image[:, int(numpy.floor(centerline_index))::-1] # flip upside-down so centerline is at top
+    bottom_image = cost_image[:, int(numpy.ceil(centerline_index)):]
+
+    x, top_widths = _trace_costs(top_image, roughness_penalty)
+    x, bottom_widths = _trace_costs(bottom_image, roughness_penalty)
+
+    # if centerline was halfway between pixels, then we need to add 0.5 to the resulting widths
+    if int(centerline_index) != centerline_index:
         top_widths += 0.5
         bottom_widths += 0.5
 
-    #NOTE: using the midpoint as the zero axis, we negate the bottom widths (hence, it is
-    #negative here) ie. it becomes (top_widths + (-bottom_widths))
-    new_center = (bottom_widths-top_widths)/2 #find the midpoint between the two points
-    #put the pixels in the same frame of reference as straightened worm
-    new_center += int(image.shape[1]/2)
-    new_widths = (top_widths+bottom_widths)/2#calculate the average widths
+    # offset centerline by difference between bottom and top...
+    new_centerline = centerline_index + (bottom_widths - top_widths) / 2
+    # ... which means equal widths on each side
+    new_widths = (top_widths + bottom_widths) / 2
+    center_coordinates = numpy.transpose([x, new_centerline])
+    return center_coordinates, new_widths
 
-    center_coordinates = numpy.transpose([xt,new_center])
-    width_coordinates = numpy.transpose([xt,new_widths])
+def _trace_costs(cost_image, roughness_penalty):
+    """Trace through a cost image to find the lowest-cost worm edge.
 
-    return (center_coordinates, width_coordinates)
-
-
-def find_edges(image, avg_width_tck, ggm_sigma=1, sig_per=61, sig_growth_rate=2, alpha=1, mcp_alpha=1):
-    """Find the edges of one side of the worm and return the x,y positions of the new widths
-    NOTE: This function assumes that the image is only half of the worm (ie. from the centerline
-    to the edges of the worm)
+    The input image should correspond to HALF of a worm, with the presumptive
+    centerline running along the top of the image (y=0).
 
     Parameters:
-        image: ndarray of the straightened worm image (typically either top or bottom half)
-        avg_width_tck: width spline defining the average distance from the centerline
-            to the worm edges (This is taken from the pca things we did earlier)
-        ggm_sigma, sig_per, sig_growth_rate, alpha, mcp_alpha: hyperparameters for
-            the edge-detection scheme
+        cost_image: image defining the cost function for tracing edges.
+        roughness_penalty: how much to penalize diagonal steps vs. straight
+            steps in the edge tracing (to penalize jagged edges).
 
-    Returns:
-        route: tuple of x,y positions of the identfied edges
+    Returns: x and y positions of the identfied edges with shape (2, cost_image.shape[0])
     """
-
-    #down sample the image
-    image_down = pyramid.pyr_down(image, downscale=2)
-
-    #get the gradient
-    gradient = ndimage.filters.gaussian_gradient_magnitude(image_down, ggm_sigma)
-    top_ten = numpy.percentile(gradient, sig_per)
-    gradient = sigmoid(gradient, gradient.min(), top_ten, gradient.max(), sig_growth_rate)
-    gradient = gradient.max() - abs(gradient)
-
-    #penalize finding edges near the centerline or outside of the avg_width_tck
-    #since the typical worm is fatter than the centerline and not huge
-    #Need to divide by 2 because of the downsampling
-    average_widths = (interpolate.spline_interpolate(avg_width_tck, image_down.shape[0]))
-    distance_from_average = abs(numpy.subtract.outer(average_widths, numpy.arange(0, image_down.shape[1])))
-    distance_penalty = alpha * distance_from_average
-    new_costs = gradient + distance_penalty
-
-    #set start and end points for the traceback
-    #we have multiple start sites in case the head does not start at zero width
+    # set start and end points for the traceback
+    # we have multiple start sites in case the head does not start at zero width
     starts = [(0,i) for i in range(6)]
-    ends = [(new_costs.shape[0]-1, 0)] # assume the tail ends at zero width though
+    ends = [(cost_image.shape[0]-1, 0)] # assume the tail ends at zero width though
 
-    #begin edge detection
+    # begin edge detection
     offsets = [(1,-1), (1,0), (1,1)] # allow straight forward or up/down diagonal moves
-    mcp = Smooth_MCP(new_costs, mcp_alpha, offsets=offsets)
+    mcp = _SmoothMCP(cost_image, roughness_penalty, offsets=offsets)
     mcp.find_costs(starts, ends)
     route = mcp.traceback(ends[0])
-    x, y = numpy.transpose(route)
-    return (x*2, y*2) #multiply by 2 to account for downsampling
+    return numpy.transpose(route).astype(float)
 
-def sigmoid(gradient, min, mid, max, growth_rate):
-    '''Apply the sigmoid function to the gradient.
-
-    Parameters:
-        gradient: array of the gradient of the image
-        min: lower asymptote of the sigmoid function
-        mid: midpoint of the sigmoid function (ie. the point that is halfway between
-            the lower and upper asymptotes)
-        max: upper asymptote
-        growth_rate: growth rate of the sigmoid function
-
-    Returns:
-        result from the sigmoid function
-    '''
-    return min+((max-min)/(1+numpy.exp(-(growth_rate)*(gradient-mid))))
-
-def circle_mask(cx, cy, r, shape):
-    """Helper functions for the 10x vignettes
-    """
-    cx, cy, r = int(cx * shape[0]), int(cy * shape[1]), int(r * shape[0])
-    path = celiagg.Path()
-    path.ellipse(cx, cy, r, r)
-    return worm_spline._celiagg_draw_mask(shape, path, antialias=False)
-
-def tenX_mask(img_shape):
-    """Helper function to generate the 10x vignette
-    """
-    return circle_mask(*histogram_mask.HistogramMask.DEFAULT_MASKS[0.7], shape=img_shape)
-
-def scale_image(image, objective=5):
-    """Scale images based on the mode
-
-    Parameters:
-        image: ndarray of the image
-        mag: string indicating whether the images are from 10x corrals
-            or not. This is because the 10x images have different vignetting
-            and parameters to make the images look better
-
-    Returns:
-        bf8: uint8 ndarray of the normalized image
-    """
-    if objective==10:
-        mask = tenX_mask(image.shape).astype(bool)
-        pixels = image[mask]
-        gamma = 1
-    else:
-        pixels = image.flat
-        gamma = 0.72
-
-    mode = numpy.bincount(pixels)[1:].argmax()+1
-    bf = image.astype(numpy.float32)
-    bf -= 200
-    bf *= (24000-200) / (mode-200)
-    bf8 = colorize.scale(bf, min=600, max=26000, gamma=gamma, output_max=255)
-
-    return bf8
-
-class Smooth_MCP(graph.MCP_Flexible):
+class _SmoothMCP(graph.MCP_Flexible):
     """Custom MCP class to weight different route possibilities.
-    Penalize sharp changes to make the end widths a little smoother
+    Penalize diagonal steps to make resulting path smoother
     """
-    def __init__(self, costs, alpha, offsets=None):
+    def __init__(self, costs, roughness_penalty, offsets):
         graph.MCP_Flexible.__init__(self, costs, offsets=offsets)
-        self.alpha = alpha
+        self.roughness_penalty = roughness_penalty
 
     def travel_cost(self, old_cost, new_cost, offset_length):
-        """Override method to smooth out the traceback
-        """
-
-        return self.alpha*(new_cost + abs(offset_length))
+        # Make longer (i.e. more diagonal) steps cost more
+        return self.roughness_penalty*(new_cost + abs(offset_length))

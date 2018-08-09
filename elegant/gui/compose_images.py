@@ -52,6 +52,8 @@ from ris_widget.overlay import roi
 from zplib.image import colorize
 from zplib.image import pyramid
 
+from .. import process_images
+
 def add_roi(ris_widget):
     """Convenience function to add a rectangular ROI selector to the ris_widget.
 
@@ -136,31 +138,9 @@ def generate_images_from_flipbook(ris_widget, roi=None, downsample_factor=None, 
     in zplib.image.write_movie.
     """
     for layer_images in ris_widget.flipbook_pages:
-        yield scale_tint_and_crop(ris_widget, roi, downsample_factor, fast_downsample, layer_images)
+        yield compose_images(ris_widget, roi, downsample_factor, fast_downsample, layer_images)
 
-def pin_image_mode(image, noise_floor=200, new_mode=24000):
-    """Set an image's modal intensity to a specified value.
-
-    This is most useful for brightfield images, which may have different
-    exposures, but can be made almost perfectly uniform in brightness by
-    scaling by the image's histogram mode.
-
-    Parameters:
-        image: an image of uint8 or uint16 dtype
-        noise_floor: the "zero value" for the image (e.g. the camera noise floor)
-        new_mode: the value to set the mode of the image to.
-
-    Returns: modified image
-    """
-    mode = numpy.bincount(image.flat)[1:].argmax()+1 # ignore 0-valued pixels, which for heavily-vignetted images may be the mode
-    fimage = image.astype(numpy.float32)
-    fimage -= noise_floor
-    fimage *= (new_mode - noise_floor) / (mode - noise_floor)
-    fimage += noise_floor
-    fimage.clip(0, None, out=fimage)
-    return fimage.astype(image.dtype)
-
-def pin_flipbook_modes(ris_widget, layer=0, noise_floor=200, new_mode=24000):
+def pin_flipbook_modes(ris_widget, layer=0, noise_floor=200, new_mode=24000, optocoupler=None):
     """For every image in a given layer in the flipbook, pin its modal value
     as described in pin_image_mode(). Images are modified in-place.
 
@@ -174,8 +154,11 @@ def pin_flipbook_modes(ris_widget, layer=0, noise_floor=200, new_mode=24000):
             are generally layer 0).
         noise_floor: the "zero value" for the image (e.g. the camera noise floor)
         new_mode: the value to set the mode of the image to.
+        optocoupler: magnification of optocoupler (1 or 0.7) to use in defining
+            the vignetted region (ignored for mode calculation); or None to use
+            whole image.
     """
     for layer_images in ris_widget.flipbook_pages:
         image = layer_images[layer]
-        image.data[:] = pin_image_mode(image.data, noise_floor, new_mode)
+        image.data[:] = process_images.pin_image_mode(image.data, noise_floor, new_mode, optocoupler=optocoupler)
         image.refresh()
