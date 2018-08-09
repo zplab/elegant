@@ -20,7 +20,7 @@ def pose_from_mask(mask, smoothing=1):
     Parameter:
         mask: a binary mask image with a single object
         smoothing: smoothing factor to apply to splines produced (see docstring
-            for smooth_spline). If 0, no smoothing will be applied.
+            for zplib.interpolate.smooth_spline). If 0, no smoothing will be applied.
     Returns: center_tck, width_tck
         splines defining the (x, y) position of the centerline and the distance
         from the centerline to the edge (called "widths" but more like "half-

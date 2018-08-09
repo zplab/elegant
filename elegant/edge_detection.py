@@ -80,7 +80,7 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
     new_center_tck = interpolate.fit_spline(new_center_coordinates, smoothing=post_smoothing*len(new_center_coordinates))
     x = numpy.linspace(0, 1, len(widths))
     # don't forget to expand widths to account for downsampling
-    new_width_tck = interpolate.fit_nonparametric_spline(x, widths*downscale, smoothing=len(widths))
+    new_width_tck = interpolate.fit_nonparametric_spline(x, widths*downscale, smoothing=post_smoothing*len(widths))
     return cost_image, new_center_tck, new_width_tck
 
 def get_cost_image(image, optocoupler, image_gamma, center_tck, width_tck, avg_width_tck,
