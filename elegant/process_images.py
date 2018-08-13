@@ -4,6 +4,7 @@ import functools
 
 import numpy
 import celiagg
+import freeimage
 
 from zplib.image import draw
 try:

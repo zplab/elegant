@@ -22,7 +22,7 @@ class KeypointAnnotation(annotator.AnnotationField):
         self.point_set = identified_point_set.IdentifiedPointSet(ris_widget, num_points, qcolors, pen)
         self.point_set.geometry_change_callbacks.append(self.on_geometry_change)
         self._auto_advance = auto_advance
-        super().__init__(name)
+        super().__init__(name, default={name: None for name in keypoint_names})
 
     def init_widget(self):
         self.widget = Qt.QGroupBox(self.name)
@@ -87,8 +87,12 @@ class KeypointAnnotation(annotator.AnnotationField):
             label.setStyleSheet(style)
 
     def auto_advance(self, old_named_points, new_named_points):
-        if not self._auto_advance or old_named_points is None or new_named_points is None:
+        # advance only when going from not-enough-points to enough-points
+        if not self._auto_advance or new_named_points is None:
             return False
-        old_nones = len([v for v in old_named_points.values() if v is None])
-        new_nones = len([v for v in new_named_points.values() if v is None])
-        return old_nones > 0 and new_nones == 0
+        if old_named_points is None:
+            prev_remaining = len(self.keypoint_names)
+        else:
+            prev_remaining = len([v for v in old_named_points.values() if v is None])
+        new_remaining = len([v for v in new_named_points.values() if v is  None])
+        return prev_remaining > 0 and new_remaining == 0
