@@ -34,8 +34,8 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
 
     Parameters:
         experiment_root: the path to an experimental directory.
-        channels: list/tuple of image names to load for each timepoint, or
-            a single string.
+        channels: list/tuple of image channels to load for each timepoint, or
+            a single channel as a string. If None, return all channels found.
         timepoint_filter: if not None, this must be a function defined as:
             timepoint_filter(position_name, timepoint_name) -> bool
             This function takes the position name and the timepoint name, and
@@ -72,27 +72,48 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
     scan_positions() function:
         files = scan_positions('path/to/experiment', filter_excluded)
     """
-    experiment_root = pathlib.Path(experiment_root)
-    positions = collections.OrderedDict()
+    positions = scan_all_images(experiment_root, image_ext)
     if isinstance(channels, str):
         channels = [channels]
-    for image_path in sorted(experiment_root.glob('*/* {}.{}'.format(channels[0], image_ext))):
-        position_name = image_path.parent.name
-        if position_name not in positions:
-            positions[position_name] = collections.OrderedDict()
-        timepoints = positions[position_name]
-        timepoint_name = image_path.stem.split(' ')[0]
-        if timepoint_filter is None or timepoint_filter(position_name, timepoint_name):
-            channel_images = []
-            for channel in channels:
-                image_path = experiment_root / position_name / (timepoint_name + ' {}.{}'.format(channel, image_ext))
-                if not image_path.exists():
-                    raise RuntimeError('File not found: '.format(str(image_path)))
-                channel_images.append(image_path)
-            timepoints[timepoint_name] = channel_images
-    for position_name, timepoints in list(positions.items()):
-        if len(timepoints) == 0:
-            del positions[position_name]
+    filtered_positions = collections.OrderedDict()
+    for position_name, timepoints in positions.items():
+        filtered_timepoints = collections.OrderedDict()
+        for timepoint_name, timepoint_images in timepoints.items():
+            if timepoint_filter is  None or timepoint_filter(position_name, timepoint_name):
+                if channels is None:
+                    channel_images = [image_path for channel, image_path in sorted(timepoint_images.items())]
+                else:
+                    if not set(timepoint_images).issuperset(channels):
+                        missing = set(channels).difference(timepoint_images)
+                        raise RuntimeError(f'Not all requested channels present for {position_name}/{timepoint_name}. Missing: {missing}')
+                    channel_images = [timepoint_images[channel] for channel in channels]
+                if len(channel_images) > 0:
+                    filtered_timepoints[timepoint_name] = channel_images
+        if len(filtered_timepoints) > 0:
+            filtered_positions[position_name] = filtered_timepoints
+    return filtered_positions
+
+def scan_all_images(experiment_root, image_ext='png'):
+    """Read all image files from an experiment directory.
+
+    Parameters:
+        experiment_root: the path to an experimental directory.
+        image_ext: the image filename extension.
+
+    Returns: an ordered dictionary mapping position names to position dicts,
+        where each position dict is another ordered dictionary mapping timepoint
+        names to a dictionary that maps channel names (e.g. 'bf', 'gfp') to the
+        paths to those images.
+    """
+    experiment_root = pathlib.Path(experiment_root)
+    positions = collections.OrderedDict()
+    for position_root in sorted(p.parent for p in experiment_root.glob('*/position_metadata.json')):
+        position_name = position_root.name
+        timepoints = positions.setdefault(position_name, collections.OrderedDict())
+        for image_path in sorted(position_root.glob(f'*.{image_ext}')):
+            timepoint_name, channel = image_path.stem.split(' ', 1)
+            timepoint_images = timepoints.setdefault(timepoint_name, {})
+            timepoint_images[channel] = image_path
     return positions
 
 def scan_positions(experiment_root, position_filter, channels='bf', image_ext='png'):
@@ -122,6 +143,12 @@ def scan_positions(experiment_root, position_filter, channels='bf', image_ext='p
     def timepoint_filter(position_name, timepoint_name):
         return position_name in selected_positions and timepoint_name in selected_positions[position_name][1]
     return scan_experiment_dir(experiment_root, channels, timepoint_filter, image_ext)
+
+def flatten_positions(positions):
+    for position_name, timepoints in positions.items():
+        for timepoint_name, channel_images in timepoints.items():
+            for image_path in channel_images:
+                yield position_name, timepoint_name, image_path
 
 def add_position_to_flipbook(ris_widget, position):
     """Add images from a single ordered position dictionary (as returned by

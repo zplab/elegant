@@ -12,13 +12,13 @@ import celiagg
 from zplib.curve import spline_geometry
 from zplib.curve import interpolate
 from zplib.image import draw
-
+import zplib.image.mask as zpmask
 
 def pose_from_mask(mask, smoothing=1):
     """Calculate worm pose splines from mask image.
 
     Parameter:
-        mask: a binary mask image with a single object
+        mask: mask image (the largest object in the mask will be used)
         smoothing: smoothing factor to apply to splines produced (see docstring
             for zplib.interpolate.smooth_spline). If 0, no smoothing will be applied.
     Returns: center_tck, width_tck
@@ -28,6 +28,8 @@ def pose_from_mask(mask, smoothing=1):
         If there was no object in the mask, returns None for each.
     """
     mask = mask > 0
+    # get largest object allowing diagonal connectivity
+    mask = zpmask.get_largest_object(mask, structure=numpy.ones((3,3)))
     # crop image for faster medial axis transform
     slices = ndimage.find_objects(mask)
     if len(slices) == 0: # mask is completely empty
