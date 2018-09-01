@@ -8,4 +8,10 @@ setuptools.setup(
     description = 'tools and pipelines for zplab C. elegans data',
     packages = setuptools.find_packages(),
     package_data = {'elegant': ['width_data/*.pickle']},
+    entry_points = {
+        'console_scripts': [
+            'segment_experiment=elegant.process_experiment:segment_main',
+            'compress_experiment=elegant.process_experiment:compress_main'
+        ],
+    }
 )
