@@ -78,7 +78,7 @@ class StageField(annotator.AnnotationField):
         if value is None:
             self.label.setText('')
         elif value not in self.stages:
-            raise ValueError('Value {} not in list of stages.'.format(value))
+            raise ValueError(f'Value {value} not in list of stages.')
         else:
             self.label.setText(value)
 

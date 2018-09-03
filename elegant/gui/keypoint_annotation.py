@@ -78,12 +78,12 @@ class KeypointAnnotation(annotator.AnnotationField):
     def update_text(self, named_points):
         if named_points is None:
             named_points = {name: None for name in self.keypoint_names}
-        for label, color, name in zip(self.labels, self.colors, self.keypoint_names):
+        for label, (r, g, b), name in zip(self.labels, self.colors, self.keypoint_names):
             point = named_points[name]
             if point is None:
                 style = 'color: gray'
             else:
-                style = 'color: rgb({}, {}, {}); font-weight: bold'.format(*color)
+                style = f'color: rgb({r}, {g}, {b}); font-weight: bold'
             label.setStyleSheet(style)
 
     def auto_advance(self, old_named_points, new_named_points):
