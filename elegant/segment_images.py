@@ -70,6 +70,6 @@ def segment_positions(positions, model, use_gpu=True, overwrite_existing=False):
         if overwrite_existing or not mask_path.exists():
             mask_path.parent.mkdir(exist_ok=True, parents=True)
             images_and_outputs.append((image_path, mask_path))
-    process = segment_images.segment_images(images_and_outputs, model, use_gpu)
+    process = segment_images(images_and_outputs, model, use_gpu)
     process_data.annotate(experiment_root, [process_data.annotate_poses])
     return process
