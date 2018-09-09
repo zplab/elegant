@@ -7,7 +7,7 @@ import tempfile
 
 import freeimage
 
-from . import process_data
+from . import process_data, load_data
 
 MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime/v94'
 SEGMENT_EXECUTABLE = 'processImageBatch'
