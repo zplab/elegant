@@ -7,7 +7,7 @@ import tempfile
 
 import freeimage
 
-from . import process_data
+from . import process_data, load_data
 
 MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime/v94'
 SEGMENT_EXECUTABLE = 'processImageBatch'
@@ -38,8 +38,9 @@ def segment_images(images_and_outputs, model, use_gpu=True):
             temp.write(str(image_file)+'\n')
             temp.write(str(mask_file)+'\n')
         temp.flush()
-        process = subprocess.run([segmenter, temp.name, str(int(bool(use_gpu))), model],
-            capture_output=True, text=True, env=env)
+        # process = subprocess.run([segmenter, temp.name, str(int(bool(use_gpu))), model],
+        #     capture_output=True, text=True, env=env)
+        process = subprocess.run([segmenter, temp.name, str(int(bool(use_gpu))), model], env=env) # quick hack for python 3.6 since capture_output and text not on python3.6
     return process
 
 def segment_positions(positions, model, use_gpu=True, overwrite_existing=False):
@@ -70,6 +71,6 @@ def segment_positions(positions, model, use_gpu=True, overwrite_existing=False):
         if overwrite_existing or not mask_path.exists():
             mask_path.parent.mkdir(exist_ok=True, parents=True)
             images_and_outputs.append((image_path, mask_path))
-    process = segment_images.segment_images(images_and_outputs, model, use_gpu)
+    process = segment_images(images_and_outputs, model, use_gpu)
     process_data.annotate(experiment_root, [process_data.annotate_poses])
     return process
