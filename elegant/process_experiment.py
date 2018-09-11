@@ -8,6 +8,7 @@ import freeimage
 
 from . import load_data
 from . import segment_images
+from . import process_data
 
 def compress_pngs(experiment_root, timepoints=None, level=freeimage.IO_FLAGS.PNG_Z_DEFAULT_COMPRESSION):
     """Recompress image files from an experiment directory.
@@ -66,6 +67,7 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
     """
     positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
     segment_images.segment_positions(positions, model, use_gpu, overwrite_existing)
+    process_data.annotate(experiment_root, [process_data.annotate_poses])
 
 def segment_main(argv=None):
     parser = argparse.ArgumentParser(description="segment image files from experiment")

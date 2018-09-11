@@ -47,7 +47,7 @@ def segment_images(images_and_outputs, model, use_gpu=True):
             env=env, universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return process
 
-def segment_positions(positions, model, use_gpu=True, overwrite_existing=False):
+def segment_positions(positions, model, use_gpu=True, overwrite_existing=False, mask_root=None):
     """Segment image files from an experiment directory.
 
     Runs the external matlab segmenter on positions from an experiment directory,
@@ -61,12 +61,14 @@ def segment_positions(positions, model, use_gpu=True, overwrite_existing=False):
         use_gpu: whether or not to use the GPU to perform the segmentations
         overwrite_existing: if False, the segmenter will not be run on existing
             mask files.
+        mask_root: root directory into which to save generated masks; if None, defaults
+            to the standard mask root in 'derived_data'
 
     Returns: subprocess.CompletedProcess instance with relevant information
         from the matlab segmenter run. (Useful attributes include returncode,
         stdout, and stderr.)
     """
-    mask_root = None
+
     images_and_outputs = []
     for position_name, timepoint_name, image_path in load_data.flatten_positions(positions):
         if mask_root is None:
@@ -76,5 +78,4 @@ def segment_positions(positions, model, use_gpu=True, overwrite_existing=False):
             mask_path.parent.mkdir(exist_ok=True, parents=True)
             images_and_outputs.append((image_path, mask_path))
     process = segment_images(images_and_outputs, model, use_gpu)
-    process_data.annotate(experiment_root, [process_data.annotate_poses])
     return process
