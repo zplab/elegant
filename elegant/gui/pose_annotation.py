@@ -4,7 +4,6 @@ import collections
 import pickle
 import pkg_resources
 from PyQt5 import Qt
-import numpy
 
 from zplib.curve import interpolate
 from ris_widget.qwidgets import annotator
@@ -15,7 +14,7 @@ from .. import edge_detection
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
 
-    def __init__(self, ris_widget, name='pose', mean_widths=None, width_pca_basis=None, objective=5, optocoupler=1):
+    def __init__(self, ris_widget, name='pose', width_estimator=None, objective=5, optocoupler=1):
         """Annotation field to record worm positions.
 
         Shortcuts:
@@ -35,15 +34,7 @@ class PoseAnnotation(annotator.AnnotationField):
         Parameters:
             ris_widget: RisWidget instance
             name: name that the annotations will be stored in.
-            mean_widths: list/array of mean worm widths to use as the
-                default widths value, or a callable function that will produce
-                an appropriate default widths value for a given age (in hours),
-                where the age is looked up from the 'age' annotation. (If no
-                such annotation is present, None will be passed to the function.)
-            width_pca_basis: numpy.ndarray of shape (n, m) providing an orthonormal
-                basis for the widths, where the number of basis vectors is n and
-                their dimensionality is m. Used to perform PCA-based smoothing of
-                the width profile by projecting a given profile into the PCA basis.
+            width_estimator: worm_widths.WidthEstimator instance, or None.
             objective: magnification (as a float) of the objective used
             optocoupler: magnification (as a float) of the optocoupler used
         """
@@ -52,20 +43,10 @@ class PoseAnnotation(annotator.AnnotationField):
         self.outline.geometry_change_callbacks.append(self.on_geometry_change)
         self.undo_stack = collections.deque(maxlen=100)
         self.redo_stack = collections.deque(maxlen=100)
-        if mean_widths is not None:
-            if not callable(mean_widths):
-                mean_widths = numpy.array(mean_widths)
-        else:
-            width_pca_basis = None # can't use the PCA basis if no mean is supplied!
-        self.mean_widths = mean_widths
-        if width_pca_basis is not None:
-            width_pca_basis = numpy.asarray(width_pca_basis)
-            if not numpy.allclose((width_pca_basis**2).sum(axis=1), numpy.ones(len(width_pca_basis))):
-                raise ValueError('a unit-length (non-normalized) PCA basis must be provided')
-        self.width_pca_basis = width_pca_basis
+        self.width_estimator = width_estimator
         self.objective = objective
         self.optocoupler = optocoupler
-        super().__init__(name)
+        super().__init__(name, default=(None, None))
 
     def init_widget(self):
         self.widget = Qt.QGroupBox(self.name)
@@ -138,27 +119,6 @@ class PoseAnnotation(annotator.AnnotationField):
             widget.setSizePolicy(sp)
             hbox.addWidget(widget, stretch=1)
 
-    def default_annotation_for_page(self, page):
-        center_tck = None
-        width_tck = self.get_default_widths()
-        return center_tck, width_tck
-
-    def _get_default_width_profile(self):
-        if callable(self.mean_widths):
-            age = None
-            if hasattr(self.page, 'annotations'):
-                age = self.page.annotations.get('age')
-            return self.mean_widths(age)
-        else:
-            return self.mean_widths
-
-    def get_default_widths(self):
-        width_profile = self._get_default_width_profile()
-        if width_profile is None:
-            return None
-        else:
-            return self.outline.width_spline.calculate_tck(width_profile)
-
     def on_geometry_change(self, tcks):
         center_tck, width_tck = tcks
         self.show_or_hide_centerline(self.show_centerline.isChecked())
@@ -205,8 +165,8 @@ class PoseAnnotation(annotator.AnnotationField):
         self.draw_center_button.setChecked(self.outline.center_spline.drawing)
         self.draw_width_button.setEnabled(has_center and unlocked)
         self.draw_width_button.setChecked(self.outline.width_spline.drawing)
-        self.default_button.setEnabled(self.mean_widths is not None and has_center and unlocked)
-        self.pca_button.setEnabled(self.width_pca_basis is not None and has_center_and_widths and unlocked)
+        self.default_button.setEnabled(self.width_estimator is not None and has_center and unlocked)
+        self.pca_button.setEnabled(self.width_estimator is not None and has_center_and_widths and unlocked)
         self.reverse_button.setEnabled(has_center and unlocked)
         self.auto_center_button.setEnabled(has_center and unlocked)
         self.auto_widths_button.setEnabled(has_center and unlocked)
@@ -230,6 +190,26 @@ class PoseAnnotation(annotator.AnnotationField):
         # stack getting properly updated via our on_geometry_change()
         self.outline._geometry_changed()
 
+    def get_default_widths(self):
+        if self.width_estimator is None:
+            return None
+        else:
+            return self.width_estimator.width_tck_for_age(self.page.annotations.get('age'))
+
+    def set_widths_to_default(self):
+        self._change_geometry(width_tck=self.get_default_widths())
+
+    def _pca_smooth_widths(self, width_tck):
+        if self.width_estimator is None:
+            return None
+        mean_widths = self.width_estimator.width_profile_for_age(self.page.annotations.get('age'))
+        return self.width_estimator.pca_smooth_widths(width_tck, mean_widths)
+
+    def pca_smooth_widths(self):
+        width_tck = self._pca_smooth_widths(self.outline.width_spline.geometry)
+        if width_tck is not None:
+            self._change_geometry(width_tck=width_tck)
+
     def _fit_to_image(self):
         center_tck, width_tck = edge_detection.detect_edges(
             image=self.ris_widget.image.data,
@@ -250,33 +230,11 @@ class PoseAnnotation(annotator.AnnotationField):
         center_tck, width_tck = self._fit_to_image()
         self._change_geometry(width_tck=width_tck)
 
-    def set_widths_to_default(self):
-        self._change_geometry(width_tck=self.get_default_widths())
-
-    def _pca_smooth_widths(self, width_tck):
-        if self.width_pca_basis is None:
-            return
-        mean_widths = self._get_default_width_profile()
-        if mean_widths is None:
-            return
-        basis_shape = self.width_pca_basis.shape[1]
-        x = numpy.linspace(0, 1, basis_shape)
-        mean_shape = mean_widths.shape[0]
-        if mean_shape != basis_shape:
-            mean_widths = numpy.interp(x, numpy.linspace(0, 1, mean_shape), mean_widths)
-        widths = interpolate.spline_evaluate(width_tck, x)
-        pca_projection = numpy.dot(widths - mean_widths, self.width_pca_basis.T)
-        pca_reconstruction = mean_widths + numpy.dot(pca_projection, self.width_pca_basis)
-        return self.outline.width_spline.calculate_tck(pca_reconstruction, x)
-
-    def pca_smooth_widths(self):
-        width_tck = self._pca_smooth_widths(self.outline.width_spline.geometry)
-        if width_tck is not None:
-            self._change_geometry(width_tck=width_tck)
-
     def draw_centerline(self, draw):
         center_tck, width_tck = self.get_annotation()
         if draw:
+            if width_tck is None:
+                width_tck = self.get_default_widths()
             self.outline.geometry = None, width_tck
             self.outline.center_spline.start_drawing()
         else: # draw operation canceled by clicking button again
@@ -311,71 +269,3 @@ class PoseAnnotation(annotator.AnnotationField):
         self.outline.setVisible(show) # in lab frame of reference
         self.outline.width_spline.setVisible(show) # in worm frame
 
-def calculate_temp_factor(experiment_temperature, ref_temperature):
-    # Average developmental-timing factors from Table 2 of Byerly, Cassada and Russell 1976
-    time_factors = [1.90, 1.37, 1]
-    temps = [16, 19.5, 25]
-    # assume time scaling factors are roughly linear in this range...
-    time_out, time_in = numpy.interp([experiment_temperature, ref_temperature], temps, time_factors)
-    return time_out / time_in
-
-def default_width_data(pixels_per_micron, experiment_temperature=None, age_factor=1):
-    """Load default widths vs. age data and PCA basis for width smoothing.
-
-    Parameters:
-        pixels_per_micron: conversion factor for objective used.
-        experiment_temperature: used to (crudely) correct the width-vs-age data
-            for the current experimental temperature.
-        age_factor: further time-multiplier for age data, to use as necessary.
-            If your animals are growing faster than the default width estimator
-            expects (even after adjusting for temperature), pass a value < 1;
-            if growing slower pass a value > 1.
-
-    Returns: (width_estimator, width_pca_basis)
-        width_estimator: a WidthEstimator instance suitable to pass to
-            PoseAnnotation as the mean_widths parameter.
-        width_pca_basis: an orthonormal PCA basis set for smoothing widths,
-            suitable to pass to PoseAnnotation as the width_pca_basis parameter.
-
-    """
-    with pkg_resources.resource_stream('elegant', 'width_data/width_trends.pickle') as f:
-        trend_data = pickle.load(f)
-
-    if experiment_temperature is not None:
-        # NB: width_trends.pickle currently is based on an experiment at 23.5C
-        age_factor *= calculate_temp_factor(experiment_temperature, ref_temperature=23.5)
-    # NB: width_trends.pickle currently has ages in days: convert to hours
-    estimator = WidthEstimator(trend_data['ages']*24*age_factor, trend_data['width_trends']*pixels_per_micron)
-
-    with pkg_resources.resource_stream('elegant', 'width_data/width_pca.pickle') as f:
-        pca_data = pickle.load(f)
-    pca_basis = pca_data['pcs']
-    return estimator, pca_basis
-
-class WidthEstimator:
-    def __init__(self, ages, width_trends):
-        """Calculate the average width profiles based on age.
-
-        Parameters:
-            ages: array/list of ages at which the mean width profile was measured
-                (length n).
-            width_trends: array of shape (m, n), where m is the number of points
-                along the width profile and n is the number of ages at which the
-                profile was measured. I.e. entry width_trends[a, b] is the mean
-                width at position a along the profile at age b.
-
-        When called as a function, estimate the width profile for a given age.
-
-        Example:
-            estimator = default_width_data(pixels_per_micron=1)[0]
-            width_profile = estimator(36) # profile of average widths at 36 hours
-        """
-
-        self.ages = numpy.asarray(ages)
-        self.mean_age = self.ages.mean()
-        self.width_trends = numpy.asarray(width_trends)
-
-    def __call__(self, age):
-        if age is None:
-            age = self.mean_age
-        return numpy.array([numpy.interp(age, self.ages, wt) for wt in self.width_trends])
