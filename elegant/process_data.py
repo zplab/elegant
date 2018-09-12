@@ -22,9 +22,9 @@ DERIVED_ROOT = 'derived_data'
 def update_annotations(experiment_root):
     """Run prior to manually annotating an experiment directory, in order to
     update the annotations dictionaries with all relevant data that can be
-    automatically extracted.
+    automatically extracted from the experiment acquisition metadata files.
     """
-    annotate(experiment_root, [annotate_timestamps, annotate_z, annotate_poses], [annotate_stage_pos])
+    annotate(experiment_root, [annotate_timestamps, annotate_z], [annotate_stage_pos])
 
 def annotate(experiment_root, annotators=[], position_annotators=[]):
     """Apply one or more measurement functions to produce annotations for manual review.
@@ -73,19 +73,6 @@ def annotate_timestamps(experiment_root, position, timepoint, metadata, annotati
 
 def annotate_z(experiment_root, position, timepoint, metadata, annotations):
     annotations['stage_z'] = metadata.get('fine_z', numpy.nan)
-
-def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
-    mask_dir = experiment_root / DERIVED_ROOT / 'mask' / position
-    for mask_path in mask_dir.glob(f'{timepoint} *.png'):
-        mask_name = mask_path.stem.split(' ', 1)[1]
-        if mask_name == 'bf':
-            annotation = 'pose'
-        else:
-            annotation = f'{image_type} pose'
-        center_tck, width_tck = annotations.get(annotation, (None, None))
-        if center_tck is None:
-            mask = freeimage.read(mask_path) > 0
-            annotations[annotation] = worm_spline.pose_from_mask(mask)
 
 def annotate_stage_pos(experiment_root, position, metadata, annotations):
     x, y, z = metadata['positions'][position]
