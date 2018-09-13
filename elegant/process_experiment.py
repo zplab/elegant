@@ -3,6 +3,8 @@
 import argparse
 import os
 import tempfile
+import pickle
+import pathlib
 
 import freeimage
 
@@ -65,8 +67,14 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
         overwrite_existing: if False, the segmenter will not be run on existing
             mask files.
     """
+    experiment_root = pathlib.Path(experiment_root)
     positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
     segment_images.segment_positions(positions, model, use_gpu, overwrite_existing)
+
+    mask_root = pathlib.Path(experiment_root) / 'derived_data' / 'mask'
+    with (mask_root / 'notes.txt').open('w') as notes_file:
+        notes_file.write(f'These masks were segmented with model {model}')
+
     process_data.annotate(experiment_root, [process_data.annotate_poses])
 
 def segment_main(argv=None):
