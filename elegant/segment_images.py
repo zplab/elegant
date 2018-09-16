@@ -1,3 +1,5 @@
+# This code is licensed under the MIT License (see LICENSE file for details)
+
 import pathlib
 import os
 import numpy
@@ -7,7 +9,9 @@ import tempfile
 
 import freeimage
 
-from . import process_data, load_data
+from . import process_data
+from . import load_data
+from . import worm_spline
 
 MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime/v94'
 SEGMENT_EXECUTABLE = 'processImageBatch'
@@ -38,40 +42,77 @@ def segment_images(images_and_outputs, model, use_gpu=True):
             temp.write(str(image_file)+'\n')
             temp.write(str(mask_file)+'\n')
         temp.flush()
+        # TODO: When all machines are on python 3.7, can use "capture_output=True" instead of stdout and stderr
+        # and can use the more clear "text" instead of "universal_newlines":
         # process = subprocess.run([segmenter, temp.name, str(int(bool(use_gpu))), model],
-        #     capture_output=True, text=True, env=env)
-        process = subprocess.run([segmenter, temp.name, str(int(bool(use_gpu))), model], env=env) # quick hack for python 3.6 since capture_output and text not on python3.6
+        #     env=env, capture_output=True, text=True)
+        process = subprocess.run([segmenter, temp.name, str(int(bool(use_gpu))), model],
+            env=env, universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return process
 
-def segment_positions(positions, model, use_gpu=True, overwrite_existing=False, mask_root=None):
-    """Segment image files from an experiment directory.
-
-    Runs the external matlab segmenter on positions from an experiment directory,
-    then runs the pose-finding
+def segment_positions(positions, model, mask_root, use_gpu=True, overwrite_existing=False):
+    """Segment image files from a position dictionary and write mask files.
 
     Parameters:
         positions: positions dictionary, as returned by load_data.scan_experiment_dir.
         model: path to a model file, or name of a model packaged with
             the matlab tool. (If there is no '/' in this parameter, it is
             assumed to be a model name rather than a path.)
+        mask_root: root directory into which to save generated masks
         use_gpu: whether or not to use the GPU to perform the segmentations
         overwrite_existing: if False, the segmenter will not be run on existing
             mask files.
-        mask_root: root directory into which to save generated masks; if None, defaults
-            to the standard mask root in 'derived_data'
 
     Returns: subprocess.CompletedProcess instance with relevant information
         from the matlab segmenter run. (Useful attributes include returncode,
         stdout, and stderr.)
     """
-
     images_and_outputs = []
     for position_name, timepoint_name, image_path in load_data.flatten_positions(positions):
-        if mask_root is None:
-            mask_root = image_path.parent.parent / 'derived_data' / 'mask'
         mask_path = mask_root / position_name / (image_path.stem + '.png')
         if overwrite_existing or not mask_path.exists():
             mask_path.parent.mkdir(exist_ok=True, parents=True)
             images_and_outputs.append((image_path, mask_path))
     process = segment_images(images_and_outputs, model, use_gpu)
     return process
+
+def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing=False):
+    """Extract worm poses from mask files and add them to an annotation dictionary.
+
+    Poses from brightfield-derived masks will be stored as the annotation "pose".
+    All other masks will be named as '{image_type} pose', where image_type is
+    the image channel name (e.g. "gfp"). In addition, these poses will also be
+    stored with the same name, but with ' [original]' appended. This way, it is
+    possible to determine if and how much a user has modified a pose from the
+    original annotation.
+
+    Parameters:
+        positions: positions dictionary, as returned by load_data.scan_experiment_dir.
+        mask_root: root directory into which to save generated masks.
+        annotations: annotation dictionary, as returned by load_data.read_annotations.
+        overwrite_existing: if False, pose annotations that already exist will
+            not be modified. If no '[original]' annotation exists, that will be
+            added regardless, however.
+    """
+    for position_name, timepoint_name, image_path in load_data.flatten_positions(positions):
+        mask_path = mask_root / position_name / (image_path.stem + '.png')
+        position_annotations, timepoint_annotations = annotations.setdefault(position_name, ({}, {}))
+        current_annotation = timepoint_annotations.setdefault(timepoint, {})
+        image_type = mask_path.stem.split(' ', 1)[1]
+        if image_type == 'bf':
+            annotation = 'pose'
+        else:
+            annotation = f'{image_type} pose'
+        original_annotation = annotation + ' [original]'
+        center_tck, width_tck = annotations.get(annotation, (None, None))
+        need_annotation = need_original = False
+        if overwrite or center_tck is None:
+            need_annotation = True
+        elif original_annotation not in annotations:
+            need_original = True
+        if need_original or need_annotation:
+            mask = freeimage.read(mask_path) > 0
+            pose = worm_spline.pose_from_mask(mask)
+            if need_annotation:
+                current_annotation[annotation] = pose
+            current_annotation[original_annotation] = pose

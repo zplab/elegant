@@ -88,7 +88,7 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
     # trace edges to calculate new centerline and widths
     center_coordinates, widths = edge_coordinates(cost_image, roughness_penalty)
     lab_center_coordinates = worm_spline.coordinates_to_lab_frame(center_coordinates, cost_image.shape, center_tck, zoom=1/downscale)
-    new_center_tck = interpolate.fit_spline(lab_center_coordinates, smoothing=post_smoothing*len(new_center_coordinates))
+    new_center_tck = interpolate.fit_spline(lab_center_coordinates, smoothing=post_smoothing*len(lab_center_coordinates))
     x = numpy.linspace(0, 1, len(widths))
     # NB: expand widths to account for downsampling
     new_width_tck = interpolate.fit_nonparametric_spline(x, widths*downscale, smoothing=post_smoothing*len(widths))

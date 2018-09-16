@@ -22,9 +22,9 @@ DERIVED_ROOT = 'derived_data'
 def update_annotations(experiment_root):
     """Run prior to manually annotating an experiment directory, in order to
     update the annotations dictionaries with all relevant data that can be
-    automatically extracted.
+    automatically extracted from the experiment acquisition metadata files.
     """
-    annotate(experiment_root, [annotate_timestamps, annotate_z, annotate_poses], [annotate_stage_pos])
+    annotate(experiment_root, [annotate_timestamps, annotate_z], [annotate_stage_pos])
 
 def annotate(experiment_root, annotators=[], position_annotators=[]):
     """Apply one or more measurement functions to produce annotations for manual review.
@@ -73,19 +73,6 @@ def annotate_timestamps(experiment_root, position, timepoint, metadata, annotati
 
 def annotate_z(experiment_root, position, timepoint, metadata, annotations):
     annotations['stage_z'] = metadata.get('fine_z', numpy.nan)
-
-def annotate_poses(experiment_root, position, timepoint, metadata, annotations):
-    mask_dir = experiment_root / DERIVED_ROOT / 'mask' / position
-    for mask_path in mask_dir.glob(f'{timepoint} *.png'):
-        mask_name = mask_path.stem.split(' ', 1)[1]
-        if mask_name == 'bf':
-            annotation = 'pose'
-        else:
-            annotation = f'{image_type} pose'
-        center_tck, width_tck = annotations.get(annotation, (None, None))
-        if center_tck is None:
-            mask = freeimage.read(mask_path) > 0
-            annotations[annotation] = worm_spline.pose_from_mask(mask)
 
 def annotate_stage_pos(experiment_root, position, metadata, annotations):
     x, y, z = metadata['positions'][position]
@@ -348,7 +335,6 @@ class PoseMeasurements:
         self.microns_per_pixel = microns_per_pixel
         self.pose_annotation = pose_annotation
 
-
     def measure(self, position_root, timepoint, annotations, before, after):
         center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
         measures = {}
@@ -379,39 +365,9 @@ class PoseMeasurements:
                 measures['rms_dist'] = numpy.mean(rmsds) * self.microns_per_pixel
         return [measures.get(feature, numpy.nan) for feature in self.feature_names]
 
-class FluorMeasurements:
-    """Provide data columns based on a fluorescent images.
-
-    This measurement applies the measure_fluor.subregion_measures function to
-    a specific fluorescent image (i.e. gfp or autofluorescence) at the
-    provided timepoint.
-
-    If the image required can't be found or there is no pose data and no mask
-    file, Nones are returned for the measurement data.
-    However, pose data is preferred, and will be
-    looked up from the annotation dictionary with the provided annotation name
-    ('pose' by default).
-
-    Note: this class must be instantiated to be used as a measurement. The
-    constructor takes the following parameters:
-        image_type: the name of the images to load, e.g. 'gfp' or 'autofluorescence'.
-            Images files will be loaded as:
-            {experiment_root}/{position_name}/{timepoint} {image_type}.png
-        pose_annotation: name of the annotation that the pose for this image,
-            'pose' by defauly.
-        mask_name: name of the mask file to read if no pose is found; 'bf' by
-            default. Mask files are expected to be organized as follows:
-            {experiment_root}/derived_data/mask/{position_name}/{timepoint} {mask_name}.png
-        write_masks: if True (default is False), write out a colorized
-            representation of the expression, high_expression and over_99
-            regions as:
-            {experiment_root}/derived_data/fluor_region_masks/{position_name}/{timepoint} {image_type}.png
-    """
-
-    def __init__(self, image_type, pose_annotation='pose', mask_name='bf', write_masks=False):
+class _FluorMeasureBase:
+    def __init__(self, image_type, write_masks):
         self.image_type = image_type
-        self.pose_annotation = pose_annotation
-        self.mask_name = mask_name
         self.write_masks = write_masks
 
     @property
@@ -426,23 +382,13 @@ class FluorMeasurements:
 
         image = freeimage.read(image_file)
         flatfield = freeimage.read(position_root.parent / 'calibrations' / f'{timepoint} fl_flatfield.tiff')
-        center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
-        if center_tck is None or width_tck is None:
-            mask_file = derived_root / 'mask' / position_root.name / f'{timepoint} {self.mask_name}.png'
-            if mask_file.exists():
-                print(f'No pose data found for {position_root.name} at {timepoint}; falling back to mask file.')
-            else:
-                print(f'No mask file or pose data found for {position_root.name} at {timepoint}.')
-                return [numpy.nan] * len(self.feature_names)
-            mask = freeimage.read(mask_file)
-        else:
-            # NB: it's WAY faster to regenerate the mask from the splines than to read it in,
-            # even if the file is cached in RAM. Strange but true.
-            mask = worm_spline.lab_frame_mask(center_tck, width_tck, image.shape)
-        if mask.sum() == 0:
-            print(f'No worm region defined for {position_root.name} at {timepoint} (empty mask or broken pose annotation?)')
-
         image = image.astype(numpy.float32) * flatfield
+        mask = self.get_mask(position_root, derived_root, timepoint, annotations)
+        if mask is None:
+            return [numpy.nan] * len(self.feature_names)
+        if mask.sum() == 0:
+            print(f'No worm region defined for {position_root.name} at {timepoint}')
+
         data, region_masks = measure_fluor.subregion_measures(image, mask)
 
         if self.write_masks:
@@ -451,3 +397,84 @@ class FluorMeasurements:
             out_dir.mkdir(parents=True, exist_ok=True)
             freeimage.write(color, out_dir / f'{timepoint} {self.image_type}.png')
         return data
+
+    def get_mask(self, position_root, derived_root, timepoint, annotations):
+        raise NotImplementedError
+
+
+class FluorMeasurements:
+    """Provide data columns based on a fluorescent images and pose data.
+
+    This measurement applies the measure_fluor.subregion_measures function to
+    a specific fluorescent image (i.e. gfp or autofluorescence) at the
+    provided timepoint.
+
+    If the image required can't be found or there is no pose data, Nones are
+    returned for the measurement data.
+
+    Note: this class must be instantiated to be used as a measurement. The
+    constructor takes the following parameters:
+        image_type: the name of the images to load, e.g. 'gfp' or 'autofluorescence'.
+            Images files will be loaded as:
+            {experiment_root}/{position_name}/{timepoint} {image_type}.png
+        pose_annotation: name of the annotation that the pose for this image,
+            'pose' by default.
+        mask_name: name of the mask file to read if no pose is found; 'bf' by
+            default. Mask files are expected to be organized as follows:
+            {experiment_root}/derived_data/mask/{position_name}/{timepoint} {mask_name}.png
+        write_masks: if True (default is False), write out a colorized
+            representation of the expression, high_expression and over_99
+            regions as:
+            {experiment_root}/derived_data/fluor_region_masks/{position_name}/{timepoint} {image_type}.png
+    """
+
+    def __init__(self, image_type, pose_annotation='pose', write_masks=False):
+        self.pose_annotation = pose_annotation
+        super().__init__(image_type, write_masks)
+
+    def get_mask(self, position_root, derived_root, timepoint, annotations):
+        center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
+        if center_tck is None or width_tck is None:
+            print(f'No pose data found for {position_root.name} at {timepoint}.')
+            return None
+        else:
+            # NB: it's WAY faster to regenerate a mask from the splines than to read it in,
+            # even if the file is in the disk cache. Strange but true.
+            return worm_spline.lab_frame_mask(center_tck, width_tck, image.shape)
+
+
+class MaskFluorMeasurements:
+    """Provide data columns based on a fluorescent images and mask images.
+
+    This measurement applies the measure_fluor.subregion_measures function to
+    a specific fluorescent image (i.e. gfp or autofluorescence) at the
+    provided timepoint.
+
+    If the image required or corresponding mask can't be found, Nones are
+    returned for the measurement data.
+
+    Note: this class must be instantiated to be used as a measurement. The
+    constructor takes the following parameters:
+        image_type: the name of the images to load, e.g. 'gfp' or 'autofluorescence'.
+            Images files will be loaded as:
+            {experiment_root}/{position_name}/{timepoint} {image_type}.png
+        mask_name: name of the mask file to read if no pose is found; 'bf' by
+            default. Mask files are expected to be organized as follows:
+            {experiment_root}/derived_data/mask/{position_name}/{timepoint} {mask_name}.png
+        write_masks: if True (default is False), write out a colorized
+            representation of the expression, high_expression and over_99
+            regions as:
+            {experiment_root}/derived_data/fluor_region_masks/{position_name}/{timepoint} {image_type}.png
+    """
+
+    def __init__(self, image_type, mask_name='bf', write_masks=False):
+        self.mask_name = mask_name
+        super().__init__(image_type, write_masks)
+
+    def get_mask(self, position_root, derived_root, timepoint, annotations):
+        mask_file = derived_root / 'mask' / position_root.name / f'{timepoint} {self.mask_name}.png'
+        if not mask_file.exists():
+            print(f'No mask file found for {position_root.name} at {timepoint}.')
+            return None
+        else:
+            return freeimage.read(mask_file)

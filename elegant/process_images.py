@@ -8,7 +8,7 @@ import freeimage
 
 from zplib.image import draw
 try:
-    from ris_widget import historgram
+    from ris_widget import histogram
     HAS_RW_HIST = True
 except ImportError:
     HAS_RW_HIST = False

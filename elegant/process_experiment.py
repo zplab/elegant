@@ -49,7 +49,7 @@ def compress_main(argv=None):
     compress_pngs(**args.__dict__)
 
 def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, overwrite_existing=False):
-    """Segment all 'bf' image files from an experiment directory.
+    """Segment all 'bf' image files from an experiment directory and annotate poses.
 
     For more complex needs, use segment_images.segment_positions. This function
     is largely a simple example of its usage.
@@ -63,11 +63,15 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
             as a string.
         use_gpu: whether or not to use the GPU to perform the segmentations
         overwrite_existing: if False, the segmenter will not be run on existing
-            mask files.
+            mask files, nor will existing annotations be modified even if new
+            mask files are generated for a timepoint.
     """
     positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
-    segment_images.segment_positions(positions, model, use_gpu, overwrite_existing)
-    process_data.annotate(experiment_root, [process_data.annotate_poses])
+    mask_root = experiment_root / 'derived_data' / 'mask'
+    segment_images.segment_positions(positions, model, mask_root, use_gpu, overwrite_existing)
+    annotations = load_data.read_annotations(experiment_root)
+    segment_images.annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing)
+    load_data.write_annotations(experiment_root, annotations)
 
 def segment_main(argv=None):
     parser = argparse.ArgumentParser(description="segment image files from experiment")
