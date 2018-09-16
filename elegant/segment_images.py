@@ -97,7 +97,7 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
     for position_name, timepoint_name, image_path in load_data.flatten_positions(positions):
         mask_path = mask_root / position_name / (image_path.stem + '.png')
         position_annotations, timepoint_annotations = annotations.setdefault(position_name, ({}, {}))
-        current_annotation = timepoint_annotations.setdefault(timepoint, {})
+        current_annotation = timepoint_annotations.setdefault(timepoint_name, {})
         image_type = mask_path.stem.split(' ', 1)[1]
         if image_type == 'bf':
             annotation = 'pose'
@@ -106,7 +106,7 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
         original_annotation = annotation + ' [original]'
         center_tck, width_tck = annotations.get(annotation, (None, None))
         need_annotation = need_original = False
-        if overwrite or center_tck is None:
+        if overwrite_existing or center_tck is None:
             need_annotation = True
         elif original_annotation not in annotations:
             need_original = True
