@@ -402,7 +402,7 @@ class _FluorMeasureBase:
         raise NotImplementedError
 
 
-class FluorMeasurements:
+class FluorMeasurements(_FluorMeasureBase):
     """Provide data columns based on a fluorescent images and pose data.
 
     This measurement applies the measure_fluor.subregion_measures function to
@@ -443,7 +443,7 @@ class FluorMeasurements:
             return worm_spline.lab_frame_mask(center_tck, width_tck, image.shape)
 
 
-class MaskFluorMeasurements:
+class MaskFluorMeasurements(_FluorMeasureBase):
     """Provide data columns based on a fluorescent images and mask images.
 
     This measurement applies the measure_fluor.subregion_measures function to
