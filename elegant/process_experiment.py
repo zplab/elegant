@@ -3,12 +3,15 @@
 import argparse
 import os
 import tempfile
+import json
+import re
 
 import freeimage
 
 from . import load_data
 from . import segment_images
 from . import process_data
+from . import worm_widths
 
 def compress_pngs(experiment_root, timepoints=None, level=freeimage.IO_FLAGS.PNG_Z_DEFAULT_COMPRESSION):
     """Recompress image files from an experiment directory.
@@ -70,7 +73,11 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
     mask_root = experiment_root / 'derived_data' / 'mask'
     segment_images.segment_positions(positions, model, mask_root, use_gpu, overwrite_existing)
     annotations = load_data.read_annotations(experiment_root)
-    segment_images.annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing)
+    metadata = load_data.read_metadata(experiment_root)
+    age_factor = metadata.get('age_factor', 1) # see if there is an "age factor" stashed in the metadata...
+    width_estimator = worm_widths.WidthEstimator.from_experiment_metadata(metadata, age_factor)
+    segment_images.annotate_poses_from_masks(positions, mask_root, annotations,
+        overwrite_existing, width_estimator)
     load_data.write_annotations(experiment_root, annotations)
 
 def segment_main(argv=None):
@@ -86,3 +93,58 @@ def segment_main(argv=None):
         help="disable GPU usage")
     args = parser.parse_args(argv)
     segment_experiment(**args.__dict__)
+
+def update_metadata_file(experiment_root, nominal_temperature, objective, optocoupler, filter_cube,
+        fluorescence_flatfield_lamp=None):
+    experiment_root = pathlib.Path(experiment_root)
+    experiment_metadata_path = experiment_root / 'experiment_metadata.json'
+    with experiment_metadata_path.open() as f:
+        experiment_metadata = json.load(f)
+    experiment_medata.update(dict(nominal_temperature=nominal_temperature,
+        objective=objective, optocoupler=optocoupler, filter_cube=filter_cube,
+        fluorescence_flatfield_lamp=fluorescence_flatfield_lamp))
+    datafile.json_encode_atomic_legible_to_file(experiment_metadata, experiment_metadata_path)
+
+def auto_update_metadata_file(experiment_root, nominal_temperature, optocoupler=None, acquire_file=None):
+    experiment_root = pathlib.Path(experiment_root)
+    if acquire_file is not None:
+        if not acquire_file.endswith('.py'):
+            acquire_file += '.py'
+        acquire_file = experiment_root / acquire_file
+    else:
+        # take the alphabetically first python file
+        acquire_file = list(sorted(experiment_root.glob('*.py')))[0]
+    contents = acquire_file.read_text()
+    objective = int(re.search(r'^    OBJECTIVE\s*=\s*(\d+)', contents, flags=re.MULTILINE)[1])
+    filter_cube = re.search(r'''^    FILTER_CUBE\s*=\s*['"](.+)['"]''', contents, flags=re.MULTILINE)[1]
+    fluorescence_flatfield_lamp = re.search(r'''^    FLUORESCENCE_FLATFIELD_LAMP\s*=\s*['"](.+)['"]''', contents, flags=re.MULTILINE)
+    # above will not match 'FLUORESCENCE_FLATFIELD_LAMP = None', so instead the match object will just be None.
+    # match object will also be None if there was just no FLUORESCENCE_FLATFIELD_LAMP line at all...
+    if fluorescence_flatfield_lamp is not None:
+        fluorescence_flatfield_lamp = fluorescence_flatfield_lamp[1]
+    if optocoupler is None:
+        optocoupler = 1 if objective == 5 else 0.7
+    print(f'Read the following from {acquire_file.parent}/{acquire_file.name}:')
+    print(f'objective = {objective}')
+    print(f'optocoupler = {optocoupler}')
+    print(f'filter_cube = {filter_cube}')
+    print(f'fluorescence_flatfield_lamp = {fluorescence_flatfield_lamp}')
+    response = input('press y/Y and enter if correct, or anything else to cancel').lower()
+    if response == 'y':
+        print('updating metadata')
+        update_metadata_file(experiment_root, nominal_temperature, objective, optocoupler, filter_cube,
+                fluorescence_flatfield_lamp)
+    else:
+        print('canceling')
+
+def update_metadata_main(argv=None):
+    parser = argparse.ArgumentParser(description="update experiment metadata file")
+    parser.add_argument('experiment_root', help='the experiment to segment')
+    parser.add_argument('-t', '--temp', dest='temperature', type=float,
+        help="nominal experiment temperature (default: %(default)s)", default=25)
+    parser.add_argument('-o', '--optocoupler', type=float,
+        help="optocoupler; if not specified will be 1 for a 10x objective and 0.7 for 5x")
+    parser.add_argument('-s', '--script', dest='acquire_file',
+        help="filename of acquisition script to parse; if not specified will be the alphabetically first python file in the experiment directory")
+    args = parser.parse_args(argv)
+    auto_update_metadata_file(**args.__dict__)

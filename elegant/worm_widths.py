@@ -7,35 +7,9 @@ import numpy
 
 from zplib.curve import interpolate
 
-def default_estimator(pixels_per_micron, experiment_temperature=None, age_factor=1):
-    """Load default widths vs. age data and PCA basis for width smoothing.
+from . import process_images
 
-    Parameters:
-        pixels_per_micron: conversion factor for objective used.
-        experiment_temperature: used to (crudely) correct the width-vs-age data
-            for the current experimental temperature.
-        age_factor: further time-multiplier for age data, to use as necessary.
-            If your animals are growing faster than the default width estimator
-            expects (even after adjusting for temperature), pass a value < 1;
-            if growing slower pass a value > 1.
-
-    Returns a WidthEstimator instance with the width profile and PCA basis.
-    """
-    with pkg_resources.resource_stream('elegant', 'width_data/width_trends.pickle') as f:
-        trend_data = pickle.load(f)
-
-    if experiment_temperature is not None:
-        # NB: width_trends.pickle currently is based on an experiment at 23.5C
-        age_factor *= calculate_temp_factor(experiment_temperature, ref_temperature=23.5)
-
-    with pkg_resources.resource_stream('elegant', 'width_data/width_pca.pickle') as f:
-        pca_data = pickle.load(f)
-    pca_basis = pca_data['pcs']
-
-    # NB: width_trends.pickle currently has ages in days: convert to hours
-    return WidthEstimator(trend_data['width_trends']*pixels_per_micron, trend_data['ages']*24*age_factor, pca_basis)
-
-def calculate_temp_factor(experiment_temperature, ref_temperature):
+def temperature_scaling_factor(experiment_temperature, ref_temperature):
     # Average developmental-timing factors from Table 2 of Byerly, Cassada and Russell 1976
     time_factors = [1.90, 1.37, 1]
     temps = [16, 19.5, 25]
@@ -44,6 +18,40 @@ def calculate_temp_factor(experiment_temperature, ref_temperature):
     return time_out / time_in
 
 class WidthEstimator:
+    @classmethod
+    def from_experiment_metadata(cls, metadata, age_factor=1):
+        pixels_per_micron = process_images.pixels_per_micron(metadata['objective'], metadata['optocoupler'])
+        return cls.from_default_widths(pixels_per_micron, metadata['nominal_temperature'], age_factor)
+
+    @classmethod
+    def from_default_widths(cls, pixels_per_micron, experiment_temperature=None, age_factor=1):
+        """Load default widths vs. age data and PCA basis for width smoothing.
+
+        Parameters:
+            pixels_per_micron: conversion factor for objective used.
+            experiment_temperature: used to (crudely) correct the width-vs-age data
+                for the current experimental temperature.
+            age_factor: further time-multiplier for age data, to use as necessary.
+                If your animals are growing faster than the default width estimator
+                expects (even after adjusting for temperature), pass a value < 1;
+                if growing slower pass a value > 1.
+
+        Returns a WidthEstimator instance with the width profile and PCA basis.
+        """
+        with pkg_resources.resource_stream('elegant', 'width_data/width_trends.pickle') as f:
+            trend_data = pickle.load(f)
+
+        if experiment_temperature is not None:
+            # NB: width_trends.pickle currently is based on an experiment at 23.5C
+            age_factor *= temperature_scaling_factor(experiment_temperature, ref_temperature=23.5)
+
+        with pkg_resources.resource_stream('elegant', 'width_data/width_pca.pickle') as f:
+            pca_data = pickle.load(f)
+        pca_basis = pca_data['pcs']
+
+        # NB: width_trends.pickle currently has ages in days: convert to hours
+        return cls(trend_data['width_trends']*pixels_per_micron, trend_data['ages']*24*age_factor, pca_basis)
+
     def __init__(self, width_trends, ages=None, pca_basis=None):
         """Calculate the average width profiles based on age, and PCA smooth widths.
 

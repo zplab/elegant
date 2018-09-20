@@ -3,6 +3,7 @@
 import collections
 import pathlib
 import pickle
+import json
 
 def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, image_ext='png'):
     """Read files from a 'worm corral' experiment for further processing or analysis.
@@ -159,6 +160,11 @@ def add_position_to_flipbook(ris_widget, position):
         futs = add_position_to_flipbook(ris_widget, positions['001'])
         futures.wait(futs)"""
     return ris_widget.add_image_files_to_flipbook(position.values(), page_names=position.keys())
+
+def read_metadata(experiment_root):
+    """Read experiment metadata file into a dictionary."""
+    metadata_file = pathlib.Path(experiment_root) / 'experiment_metadata.json'
+    return json.loads(medatada_file.read_text())
 
 def read_annotations(experiment_root):
     """Read annotation data from an experiment directory.

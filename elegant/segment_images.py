@@ -76,7 +76,7 @@ def segment_positions(positions, model, mask_root, use_gpu=True, overwrite_exist
     process = segment_images(images_and_outputs, model, use_gpu)
     return process
 
-def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing=False):
+def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing=False, width_estimator=None):
     """Extract worm poses from mask files and add them to an annotation dictionary.
 
     Poses from brightfield-derived masks will be stored as the annotation "pose".
@@ -93,6 +93,12 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
         overwrite_existing: if False, pose annotations that already exist will
             not be modified. If no '[original]' annotation exists, that will be
             added regardless, however.
+        width_estimator: WidthEstimator instance to use to perform PCA smoothing
+            of the derived pose. If None, no smoothing will be employed. Width
+            smoothing requires knowledge of the age of a given worm. If no
+            age is annotated for the worm at a given timepoint, an age will be
+            estimated from the annotated timestamps using the assumption that
+            the worm hatched at the first timepoint taken.
     """
     for position_name, timepoint_name, image_path in load_data.flatten_positions(positions):
         mask_path = mask_root / position_name / (image_path.stem + '.png')
@@ -112,7 +118,21 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
             need_original = True
         if need_original or need_annotation:
             mask = freeimage.read(mask_path) > 0
-            pose = worm_spline.pose_from_mask(mask)
+            pose = _get_pose(mask, timepoint_annotations, width_estimator)
             if need_annotation:
                 current_annotation[annotation] = pose
             current_annotation[original_annotation] = pose
+
+def _get_pose(mask, timepoint_annotations, timepoint_name, width_estimator):
+    center_tck, width_tck = worm_spline.pose_from_mask(mask)
+    if width_estimator is not None:
+        current_annotation = timepoint_annotations[timepoint_name]
+        age = None
+        if 'age' in current_annotation:
+            age = current_annotation['age']
+        else:
+            first_annotation = timepoint_annotations[sorted(timepoint_annotations.keys())[0]]
+            if 'timestamp' in current_annotation and 'timestamp' in first_annotation:
+                age = (current_annotation['timestamp'] - first_annotation['timestamp']) / 3600 # age in hours
+        width_tck = width_estimator.pca_smooth_widths(width_tck, width_estimator.width_profile_for_age(age))
+    return center_tck, width_tck

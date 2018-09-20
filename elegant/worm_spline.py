@@ -14,7 +14,7 @@ from zplib.curve import interpolate
 from zplib.image import draw
 import zplib.image.mask as zpmask
 
-def pose_from_mask(mask, smoothing=1):
+def pose_from_mask(mask, smoothing=2):
     """Calculate worm pose splines from mask image.
 
     Parameter:

@@ -46,14 +46,15 @@ Here is simple example for starting up an annotator with a few standard annotati
     from elegant.gui import timepoint_annotations
     from elegant.gui import keypoint_annotation
     from elegant import load_data
+
+    exp_root = '/path/to/data'
     
     rw = ris_widget.RisWidget()
-    width_estimator, width_pca_basis = pose_annotation.default_width_data(pixels_per_micron=1/1.3, experiment_temperature=25)
-    pa = pose_annotation.PoseAnnotation(rw, mean_widths=width_estimator, width_pca_basis=width_pca_basis)
+    metadata = load_data.read_metadata(exp_root)
+    pa = pose_annotation.PoseAnnotation.from_experiment_metadata(rw, metadata)
     st = stage_field.StageField()
     ta = timepoint_annotations.TimepointAnnotations()
     ka = keypoint_annotation.KeypointAnnotation(rw.alt_view, ['pharynx'], center_y_origin=True, auto_advance=True)
-    exp_root = '/path/to/data'
     positions = load_data.scan_experiment_dir(exp_root)
     from elegant.gui import experiment_annotator
     ea = experiment_annotator.ExperimentAnnotator(rw, exp_root, positions, [pa, st, ta, ka])

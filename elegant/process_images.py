@@ -16,6 +16,14 @@ except ImportError:
 from . import worm_spline
 
 VIGNETTE_RADIUS_1X = 0.55
+SENSOR_MICRONS_PER_PIXEL = 6.5
+
+def microns_per_pixel(objective, optocoupler):
+    total_magnification = objective * optocoupler
+    return SENSOR_MICRONS_PER_PIXEL / total_magnification
+
+def pixels_per_micron(objective, optocoupler):
+    return 1/microns_per_pixel(objective, optocoupler)
 
 def flatfield_correct(position_root, timepoint, image_type):
     image = freeimage.read(position_root / f'{timepoint} {image_type}.png')

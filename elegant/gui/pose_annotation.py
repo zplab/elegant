@@ -10,9 +10,15 @@ from ris_widget.qwidgets import annotator
 
 from .spline_overlay import spline_outline
 from .. import edge_detection
+from .. import worm_widths
 
 class PoseAnnotation(annotator.AnnotationField):
     ENABLABLE = True
+
+    @classmethod
+    def from_experiment_metadata(cls, metadata, ris_widget, name='pose', age_factor=1):
+        width_estimator = worm_widths.WidthEstimator.from_experiment_metadata(metadata, age_factor)
+        return cls(ris_widget, name, width_estimator, metadata['objective'], metadata['optocoupler'])
 
     def __init__(self, ris_widget, name='pose', width_estimator=None, objective=5, optocoupler=1):
         """Annotation field to record worm positions.
