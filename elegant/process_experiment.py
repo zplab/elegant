@@ -1,13 +1,16 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
 import argparse
-import os
-import tempfile
 import json
+import os
+import pathlib
 import re
+import tempfile
 
+import prompt_toolkit
 import freeimage
 
+from zplib import datafile
 from . import load_data
 from . import segment_images
 from . import process_data
@@ -95,17 +98,17 @@ def segment_main(argv=None):
     segment_experiment(**args.__dict__)
 
 def update_metadata_file(experiment_root, nominal_temperature, objective, optocoupler, filter_cube,
-        fluorescence_flatfield_lamp=None):
+        fluorescence_flatfield_lamp=None, **kws):
     experiment_root = pathlib.Path(experiment_root)
     experiment_metadata_path = experiment_root / 'experiment_metadata.json'
     with experiment_metadata_path.open() as f:
         experiment_metadata = json.load(f)
-    experiment_medata.update(dict(nominal_temperature=nominal_temperature,
+    experiment_metadata.update(dict(nominal_temperature=nominal_temperature,
         objective=objective, optocoupler=optocoupler, filter_cube=filter_cube,
-        fluorescence_flatfield_lamp=fluorescence_flatfield_lamp))
+        fluorescence_flatfield_lamp=fluorescence_flatfield_lamp, **kws))
     datafile.json_encode_atomic_legible_to_file(experiment_metadata, experiment_metadata_path)
 
-def auto_update_metadata_file(experiment_root, nominal_temperature, optocoupler=None, acquire_file=None):
+def auto_update_metadata_file(experiment_root, nominal_temperature, optocoupler=None, acquire_file=None, **kws):
     experiment_root = pathlib.Path(experiment_root)
     if acquire_file is not None:
         if not acquire_file.endswith('.py'):
@@ -124,24 +127,25 @@ def auto_update_metadata_file(experiment_root, nominal_temperature, optocoupler=
         fluorescence_flatfield_lamp = fluorescence_flatfield_lamp[1]
     if optocoupler is None:
         optocoupler = 1 if objective == 5 else 0.7
+    print('**********')
     print(f'Read the following from {acquire_file.parent}/{acquire_file.name}:')
     print(f'objective = {objective}')
     print(f'optocoupler = {optocoupler}')
     print(f'filter_cube = {filter_cube}')
     print(f'fluorescence_flatfield_lamp = {fluorescence_flatfield_lamp}')
-    response = input('press y/Y and enter if correct, or anything else to cancel').lower()
-    if response == 'y':
+    response = prompt_toolkit.shortcuts.confirm('press y if correct, or n/control-C to cancel ')
+    if response:
         print('updating metadata')
-        update_metadata_file(experiment_root, nominal_temperature, objective, optocoupler, filter_cube,
-                fluorescence_flatfield_lamp)
+        update_metadata_file(experiment_root, nominal_temperature, objective,
+            optocoupler, filter_cube, fluorescence_flatfield_lamp, **kws)
     else:
         print('canceling')
 
 def update_metadata_main(argv=None):
     parser = argparse.ArgumentParser(description="update experiment metadata file")
     parser.add_argument('experiment_root', help='the experiment to segment')
-    parser.add_argument('-t', '--temp', dest='temperature', type=float,
-        help="nominal experiment temperature (default: %(default)s)", default=25)
+    parser.add_argument('-t', '--temp', dest='nominal_temperature', type=float,
+        help="nominal experiment temperature", required=True)
     parser.add_argument('-o', '--optocoupler', type=float,
         help="optocoupler; if not specified will be 1 for a 10x objective and 0.7 for 5x")
     parser.add_argument('-s', '--script', dest='acquire_file',
