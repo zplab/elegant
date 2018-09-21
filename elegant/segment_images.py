@@ -13,8 +13,23 @@ from . import process_data
 from . import load_data
 from . import worm_spline
 
+try:
+    import worm_segmenter
+    HAS_SEGMENTER = True
+except ImportError:
+    HAS_SEGMENTER = False
+
+
 MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime/v94'
 SEGMENT_EXECUTABLE = 'processImageBatch'
+
+def get_model_names():
+    if not HAS_SEGMENTER:
+        return []
+    model_dir = pathlib.Path(worm_segmenter.__file__) / 'models'
+    if not model_dir.exists():
+        return []
+    return sorted(f.name for f in model_dir.iterdir() if f.is_file() and not f.name.startswith('.'))
 
 def segment_images(images_and_outputs, model, use_gpu=True):
     """Segment images with the external matlab tool.
@@ -31,6 +46,8 @@ def segment_images(images_and_outputs, model, use_gpu=True):
         stdout, and stderr.)
     """
     if '/' not in model:
+        if not HAS_SEGMENTER:
+            raise ValueError('Model name without path specified but "worm_segmenter" module with models not installed.')
         model = pkg_resources.resource_filename('worm_segmenter','models/' + model)
     mcr_root = pathlib.Path(MATLAB_RUNTIME)
     ld_path = os.pathsep.join(str(mcr_root / mat_dir / 'glnxa64') for mat_dir in ('runtime', 'bin', 'sys/os', 'extern/bin'))

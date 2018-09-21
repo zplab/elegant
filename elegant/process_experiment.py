@@ -38,11 +38,18 @@ def compress_pngs(experiment_root, timepoints=None, level=freeimage.IO_FLAGS.PNG
     for i, image_path in enumerate(to_compress):
         print(f'Compressing {image_path.parent}/{image_path.name} ({i}/{len(to_compress)})')
         image = freeimage.read(image_path)
-        with tempfile.NamedTemporaryFile(dir=image_path.parent,
-                prefix=image_path.stem + 'compressing_', suffix='.png',
-                delete=False) as temp:
+
+        temp = tempfile.NamedTemporaryFile(dir=image_path.parent,
+            prefix=image_path.stem + 'compressing_', suffix='.png', delete=False)
+        try:
             freeimage.write(image, temp.name, flags=level)
-        os.replace(temp.name, image_path)
+            os.replace(temp.name, image_path)
+        except:
+            if os.path.exists(temp.name):
+                os.unlink(temp.name)
+            raise
+        finally:
+            temp.close()
 
 def compress_main(argv=None):
     parser = argparse.ArgumentParser(description="re-compress image files from experiment")
@@ -72,6 +79,7 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
             mask files, nor will existing annotations be modified even if new
             mask files are generated for a timepoint.
     """
+    experiment_root = pathlib.Path(experiment_root)
     positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
     mask_root = experiment_root / 'derived_data' / 'mask'
     segment_images.segment_positions(positions, model, mask_root, use_gpu, overwrite_existing)
@@ -82,6 +90,16 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
     segment_images.annotate_poses_from_masks(positions, mask_root, annotations,
         overwrite_existing, width_estimator)
     load_data.write_annotations(experiment_root, annotations)
+
+class _ListAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        models = segment_images.get_model_names()
+        if len(models) == 0:
+            print('No models installed.')
+        else:
+            print('Avaliable models:')
+            print('\n    '.join(models))
+        parser.exit()
 
 def segment_main(argv=None):
     parser = argparse.ArgumentParser(description="segment image files from experiment")
@@ -94,6 +112,8 @@ def segment_main(argv=None):
         help="don't skip existing masks")
     parser.add_argument('--no-gpu', dest='use_gpu', action='store_false',
         help="disable GPU usage")
+    parser.add_argument('--list-models', '-l', default=argparse.SUPPRESS, nargs=0,
+        action=_ListAction, help="list available models")
     args = parser.parse_args(argv)
     segment_experiment(**args.__dict__)
 
