@@ -2,21 +2,23 @@
 
 import argparse
 import json
-import os
 import pathlib
 import re
-import tempfile
+import threading
 
 import prompt_toolkit
 import freeimage
 
 from zplib import datafile
+from zplib.image import threaded_io
+
 from . import load_data
 from . import segment_images
 from . import process_data
 from . import worm_widths
 
-def compress_pngs(experiment_root, timepoints=None, level=freeimage.IO_FLAGS.PNG_Z_DEFAULT_COMPRESSION):
+def compress_pngs(experiment_root, timepoints=None,
+    level=freeimage.IO_FLAGS.PNG_Z_DEFAULT_COMPRESSION, num_threads=4):
     """Recompress image files from an experiment directory.
 
     Parameters:
@@ -25,6 +27,7 @@ def compress_pngs(experiment_root, timepoints=None, level=freeimage.IO_FLAGS.PNG
             to match multiple timepoints). If None, compress all.
         level: flag from freeimage.IO_FLAGS for compression level, or integer
             from 1-9 for compression level.
+        num_threads: number of threads to use.
     """
     timepoint_filter = None
     if timepoints is not None:
@@ -35,21 +38,21 @@ def compress_pngs(experiment_root, timepoints=None, level=freeimage.IO_FLAGS.PNG
          timepoint_filter=timepoint_filter)
     to_compress = [image_path for position_name, timepoint_name, image_path in
          load_data.flatten_positions(positions)]
-    for i, image_path in enumerate(to_compress):
-        print(f'Compressing {image_path.parent}/{image_path.name} ({i}/{len(to_compress)})')
-        image = freeimage.read(image_path)
+    _VerboseCompressor(level, num_threads, to_compress)
 
-        temp = tempfile.NamedTemporaryFile(dir=image_path.parent,
-            prefix=image_path.stem + 'compressing_', suffix='.png', delete=False)
-        try:
-            freeimage.write(image, temp.name, flags=level)
-            os.replace(temp.name, image_path)
-        except:
-            if os.path.exists(temp.name):
-                os.unlink(temp.name)
-            raise
-        finally:
-            temp.close()
+class _VerboseCompressor(threaded_io.PNG_Compressor):
+    def __init__(self, level, num_threads, image_paths):
+        super().__init__(level, num_threads)
+        self.n = len(image_paths)
+        self.compressed = 0
+        self.compressed_lock = threading.Lock()
+        self.wait_first_error(self.compress(image_paths))
+
+    def _compress(self, image_path):
+        with self.compressed_lock:
+            self.compressed += 1
+            print(f'Compressing {image_path.parent}/{image_path.name} ({self.compressed}/{self.n})')
+        super()._compress(image_path)
 
 def compress_main(argv=None):
     parser = argparse.ArgumentParser(description="re-compress image files from experiment")
@@ -58,6 +61,8 @@ def compress_main(argv=None):
         help='timepoint(s) to compress')
     parser.add_argument('--level', type=int, default=6, choices=range(1, 10),
         metavar='[1-9]', help="compression level 1-9 (more than 6 doesn't do much)")
+    parser.add_argument('--threads', type=int, default=4, choices=range(1, 10),
+        metavar='[1-10]', dest='num_threads', help="number of threads to use")
     args = parser.parse_args(argv)
     compress_pngs(**args.__dict__)
 
