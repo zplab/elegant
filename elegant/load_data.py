@@ -5,6 +5,8 @@ import pathlib
 import pickle
 import json
 
+from zplib import datafile
+
 def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, image_ext='png'):
     """Read files from a 'worm corral' experiment for further processing or analysis.
 
@@ -165,6 +167,11 @@ def read_metadata(experiment_root):
     """Read experiment metadata file into a dictionary."""
     metadata_file = pathlib.Path(experiment_root) / 'experiment_metadata.json'
     return json.loads(metadata_file.read_text())
+
+def write_metadata(metadata, experiment_root):
+    """Write experiment metadata file from a dictionary."""
+    metadata_file = pathlib.Path(experiment_root) / 'experiment_metadata.json'
+    datafile.json_encode_atomic_legible_to_file(metadata, metadata_file)
 
 def read_annotations(experiment_root):
     """Read annotation data from an experiment directory.

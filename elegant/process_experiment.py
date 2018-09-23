@@ -1,7 +1,6 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
 import argparse
-import json
 import pathlib
 import re
 import threading
@@ -9,7 +8,6 @@ import threading
 import prompt_toolkit
 import freeimage
 
-from zplib import datafile
 from zplib.image import threaded_io
 
 from . import load_data
@@ -124,14 +122,11 @@ def segment_main(argv=None):
 
 def update_metadata_file(experiment_root, nominal_temperature, objective, optocoupler, filter_cube,
         fluorescence_flatfield_lamp=None, **kws):
-    experiment_root = pathlib.Path(experiment_root)
-    experiment_metadata_path = experiment_root / 'experiment_metadata.json'
-    with experiment_metadata_path.open() as f:
-        experiment_metadata = json.load(f)
-    experiment_metadata.update(dict(nominal_temperature=nominal_temperature,
+    metadata = load_data.read_metadata(experiment_root)
+    metadata.update(dict(nominal_temperature=nominal_temperature,
         objective=objective, optocoupler=optocoupler, filter_cube=filter_cube,
         fluorescence_flatfield_lamp=fluorescence_flatfield_lamp, **kws))
-    datafile.json_encode_atomic_legible_to_file(experiment_metadata, experiment_metadata_path)
+    load_data.write_metadata(metadata, experiment_root)
 
 def auto_update_metadata_file(experiment_root, nominal_temperature, optocoupler=None, acquire_file=None, **kws):
     experiment_root = pathlib.Path(experiment_root)
