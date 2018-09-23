@@ -164,7 +164,7 @@ def add_position_to_flipbook(ris_widget, position):
 def read_metadata(experiment_root):
     """Read experiment metadata file into a dictionary."""
     metadata_file = pathlib.Path(experiment_root) / 'experiment_metadata.json'
-    return json.loads(medatada_file.read_text())
+    return json.loads(metadata_file.read_text())
 
 def read_annotations(experiment_root):
     """Read annotation data from an experiment directory.
