@@ -41,20 +41,20 @@ Overall, the workflow is:
 Here is simple example for starting up an annotator with a few standard annotation types:
 
     from ris_widget import ris_widget
+    from elegant import load_data
     from elegant.gui import pose_annotation
     from elegant.gui import stage_field
     from elegant.gui import timepoint_annotations
     from elegant.gui import keypoint_annotation
-    from elegant import load_data
+    from elegant.gui import experiment_annotator
 
     exp_root = '/path/to/data'
     
     rw = ris_widget.RisWidget()
     metadata = load_data.read_metadata(exp_root)
-    pa = pose_annotation.PoseAnnotation.from_experiment_metadata(rw, metadata)
+    pa = pose_annotation.PoseAnnotation.from_experiment_metadata(metadata, rw)
     st = stage_field.StageField()
     ta = timepoint_annotations.TimepointAnnotations()
     ka = keypoint_annotation.KeypointAnnotation(rw.alt_view, ['pharynx'], center_y_origin=True, auto_advance=True)
     positions = load_data.scan_experiment_dir(exp_root)
-    from elegant.gui import experiment_annotator
     ea = experiment_annotator.ExperimentAnnotator(rw, exp_root, positions, [pa, st, ta, ka])

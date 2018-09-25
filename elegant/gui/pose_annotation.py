@@ -217,12 +217,12 @@ class PoseAnnotation(annotator.AnnotationField):
             self._change_geometry(width_tck=width_tck)
 
     def _fit_to_image(self):
+        width_tck = self.outline.width_spline.geometry
+        if width_tck is None:
+            width_tck = self.get_default_widths()
         center_tck, width_tck = edge_detection.detect_edges(
-            image=self.ris_widget.image.data,
-            center_tck=self.outline.center_spline.geometry,
-            width_tck=self.outline.width_spline.geometry,
-            avg_width_tck=self.get_default_widths(),
-            objective=self.objective, optocoupler=self.optocoupler)
+            image=self.ris_widget.image.data, center_tck=self.outline.center_spline.geometry,
+            width_tck=width_tck, objective=self.objective, optocoupler=self.optocoupler)
         smooth_width_tck = self._pca_smooth_widths(width_tck)
         if smooth_width_tck is not None:
             width_tck = smooth_width_tck
@@ -266,10 +266,10 @@ class PoseAnnotation(annotator.AnnotationField):
             self.outline.center_spline.setPen(self.outline.center_spline.display_pen)
         else:
             # "hide" by setting transparent pen. This still allows for dragging
-            # the hidden outline -- which using its setVisible method prevents.
+            # the hidden centerline -- which using its setVisible method prevents.
             self.outline.center_spline.setPen(Qt.QPen(Qt.Qt.transparent))
         # 2: hide or show midline in worm frame of reference
-        self.outline.width_spline.midline.setVisible(show)
+        self.outline.width_spline.midline.setVisible(show and self.outline.center_spline.geometry is not None)
 
     def show_or_hide_outline(self, show):
         self.outline.setVisible(show) # in lab frame of reference

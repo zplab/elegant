@@ -19,14 +19,13 @@ OBJ_PARAMS = {
         sigmoid_growth_rate=512, edge_weight=40, roughness_penalty=1, post_smoothing=2)
 }
 
-def detect_edges(image, center_tck, width_tck, avg_width_tck, objective=5, optocoupler=1):
+def detect_edges(image, center_tck, width_tck, objective=5, optocoupler=1):
     """Trace the edges of a worm and return a new center_tck and width_tck.
 
     Parameters:
         image: ndarray of the brightfield image
         center_tck: spline defining the pose of the worm.
         width_tck: spline defining the distance from centerline to worm edges.
-        avg_width_tck: width spline for an average worm (of the given age, etc.)
         objective: objective magnification (to look up correct parameters with)
         optocoupler: optocoupler magnification (to correctly calculate the image
             vignette)
@@ -36,12 +35,12 @@ def detect_edges(image, center_tck, width_tck, avg_width_tck, objective=5, optoc
         new_width_tck: new width spline
     """
     cost_image, new_center_tck, new_width_tck = _detect_edges(image, optocoupler,
-        center_tck, width_tck, avg_width_tck, **OBJ_PARAMS[objective])
+        center_tck, width_tck, **OBJ_PARAMS[objective])
     return new_center_tck, new_width_tck
 
-def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
-        image_gamma, downscale, gradient_sigma, sigmoid_midpoint,
-        sigmoid_growth_rate, edge_weight, roughness_penalty, post_smoothing):
+def _detect_edges(image, optocoupler, center_tck, width_tck, image_gamma, downscale,
+    gradient_sigma, sigmoid_midpoint, sigmoid_growth_rate, edge_weight,
+    roughness_penalty, post_smoothing):
     """Trace the edges of a worm and return a new center_tck and width_tck.
 
     Parameters:
@@ -50,7 +49,6 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
             vignette)
         center_tck: spline defining the pose of the worm.
         width_tck: spline defining the distance from centerline to worm edges.
-        avg_width_tck: width spline for an average worm (of the given age, etc.)
         image_gamma: gamma value for intensity transform to highlight worm edges
         downscale: factor by which to downsample the image
         gradient_sigma: sigma for gaussian gradient to find worm edges
@@ -82,7 +80,7 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
         new_width_tck: new width spline
     """
     cost_image = get_cost_image(image, optocoupler, image_gamma, center_tck,
-        width_tck, avg_width_tck, downscale, gradient_sigma, sigmoid_midpoint,
+        width_tck, downscale, gradient_sigma, sigmoid_midpoint,
         sigmoid_growth_rate, edge_weight)
 
     # trace edges to calculate new centerline and widths
@@ -94,8 +92,8 @@ def _detect_edges(image, optocoupler, center_tck, width_tck, avg_width_tck,
     new_width_tck = interpolate.fit_nonparametric_spline(x, widths*downscale, smoothing=post_smoothing*len(widths))
     return cost_image, new_center_tck, new_width_tck
 
-def get_cost_image(image, optocoupler, image_gamma, center_tck, width_tck, avg_width_tck,
-        downscale, gradient_sigma, sigmoid_midpoint, sigmoid_growth_rate, edge_weight):
+def get_cost_image(image, optocoupler, image_gamma, center_tck, width_tck, downscale,
+    gradient_sigma, sigmoid_midpoint, sigmoid_growth_rate, edge_weight):
     """Trace the edges of a worm and return a new center_tck and width_tck.
 
     Parameters:
@@ -104,7 +102,6 @@ def get_cost_image(image, optocoupler, image_gamma, center_tck, width_tck, avg_w
             vignette)
         center_tck: spline defining the pose of the worm.
         width_tck: spline defining the distance from centerline to worm edges.
-        avg_width_tck: width spline for an average worm (of the given age, etc.)
         image_gamma: gamma value for intensity transform to highlight worm edges
         downscale: factor by which to downsample the image
         gradient_sigma: sigma for gaussian gradient to find worm edges
@@ -120,17 +117,19 @@ def get_cost_image(image, optocoupler, image_gamma, center_tck, width_tck, avg_w
     # normalize, warp, and downsample image
     image = process_images.pin_image_mode(image, optocoupler=optocoupler)
     image = colorize.scale(image, min=600, max=26000, gamma=image_gamma, output_max=1)
-    warped_image = worm_spline.to_worm_frame(image, center_tck, width_tck)
-    small_warped = pyramid.pyr_down(warped_image, downscale=downscale)
+    warped = worm_spline.to_worm_frame(image, center_tck, width_tck, width_margin=40)
+    warped = pyramid.pyr_down(warped, downscale=downscale)
 
     # calculate the edge costs
-    gradient = ndimage.gaussian_gradient_magnitude(small_warped, gradient_sigma)
+    gradient = ndimage.gaussian_gradient_magnitude(warped, gradient_sigma)
     gradient = sigmoid(gradient, numpy.percentile(gradient, sigmoid_midpoint), sigmoid_growth_rate)
     gradient = gradient.max() - abs(gradient)
 
-    # penalize finding edges away from the average width along the worm
-    average_widths = (interpolate.spline_interpolate(avg_width_tck, small_warped.shape[0])) / downscale
-    distance_from_average = abs(numpy.subtract.outer(average_widths, numpy.arange(0, small_warped.shape[1])))
+    # penalize finding edges away from the width along the worm
+    widths = (interpolate.spline_interpolate(width_tck, warped.shape[0])) / downscale
+    centerline_index = (warped.shape[1] - 1) / 2
+    distance_from_centerline = abs(numpy.arange(0, warped.shape[1]) - centerline_index)
+    distance_from_average = abs(numpy.subtract.outer(widths, distance_from_centerline))
     return edge_weight * gradient + distance_from_average
 
 def sigmoid(x, x0, k):
