@@ -547,35 +547,3 @@ class MaskFluorMeasurements(_FluorMeasureBase):
             return None
         else:
             return freeimage.read(mask_file)
-
-class LawnMeasurements:
-    feature_names = ['summed_lawn_intensity', 'median_lawn_intensity', 'background_intensity']
-
-    def measure(self, position_root, timepoint, annotations, before, after):
-        measures = {}
-
-        # Load metadata.... TODO ask Zach if this can be a feature of the measurement signature
-        experiment_root, position_name = position_root.parent, position_root.name
-        with (experiment_root / 'experiment_metadata.json').open('r') as md_file:
-            metadata = json.load(md_file)
-
-        timepoint_imagepath = position_root / (timepoint + ' bf.png')
-        timepoint_image = freeimage.read(timepoint_imagepath)
-        rescaled_image = process_images.pin_image_mode(timepoint_image, optocoupler=metadata['optocoupler'])
-
-        lawn_mask = freeimage.read(experiment_root / 'derived_data' / 'lawn_masks' / f'{position_name}.png').astype('bool')
-        vignette_mask = process_images.vignette_mask(metadata['optocoupler'], timepoint_image.shape)
-
-        # Remove the animal from the lawn if possible.
-        center_tck, width_tck = annotations.get('pose', (None, None))
-        if center_tck is None:
-            animal_mask = numpy.zeros(timepoint_image.shape).astype('bool')   # Or should this just return Nones in the measures???
-        else:
-            animal_mask = worm_spline.lab_frame_mask(center_tck, width_tck, timepoint_image.shape).astype('bool')
-        lawn_mask = lawn_mask & ~animal_mask
-
-        measures['summed_lawn_intensity'] = numpy.sum(rescaled_image[lawn_mask])
-        measures['median_lawn_intensity'] = numpy.median(rescaled_image[lawn_mask])
-        measures['background_intensity'] = numpy.median(rescaled_image[~lawn_mask & vignette_mask])
-
-        return [measures[feature_name] for feature_name in self.feature_names]
