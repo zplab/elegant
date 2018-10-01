@@ -96,21 +96,16 @@ def annotate_lawn(experiment_root, position, metadata, annotations, num_images_f
     microns_per_pixel = process_images.microns_per_pixel(metadata['objective'],metadata['optocoupler'])
 
     position_images = load_data.scan_experiment_dir(experiment_root)[position]
-    first_imagepaths = []
-    for timepoint, timepoint_images in position_images.items():
-        if position_root / (timepoint + ' bf.png') in timepoint_images:
-            first_imagepaths.append(str(position_root / (timepoint + ' bf.png')))
-        if len(first_imagepaths) == num_images_for_lawn:
-            break
+    first_imagepaths = sorted(position_root.glob('* bf.png'))[:num_images_for_lawn]
 
-    first_images = list(map(freeimage.read, first_imagepaths))
+    first_images = [freeimage.read(str(image_path)) for image_path in first_imagepaths]
     first_images = [process_images.pin_image_mode(image, optocoupler=metadata['optocoupler'])
         for image in first_images]
 
     individual_lawns = [gmm_lawn_maker(image, metadata['optocoupler']) for image in first_images]
     lawn_mask = numpy.bitwise_or.reduce(individual_lawns, axis=0)
 
-    freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png')) # Some better way to store this mask in the annotations?
+    freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png'))
     annotations['lawn_area'] = lawn_mask.sum() * microns_per_pixel**2
 
 def gmm_lawn_maker(image, optocoupler, return_model=False):
