@@ -108,8 +108,7 @@ def annotate_lawn(experiment_root, position, metadata, annotations, num_images_f
         for image in first_images]
 
     individual_lawns = [gmm_lawn_maker(image, metadata['optocoupler']) for image in first_images]
-    lawn_mask = numpy.max(individual_lawns, axis=0)
-    vignette_mask = process_images.vignette_mask(metadata['optocoupler'], lawn_mask.shape)
+    lawn_mask = numpy.bitwise_or.reduce(individual_lawns, axis=0)
 
     freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png')) # Some better way to store this mask in the annotations?
     annotations['lawn_area'] = lawn_mask.sum() * microns_per_pixel**2
