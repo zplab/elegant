@@ -7,15 +7,21 @@ import json
 import numpy
 import collections
 import datetime
+import pickle
+
+from scipy.ndimage import filters
+from skimage import mixture
 
 from zplib.curve import spline_geometry
 from zplib.curve import interpolate
+import zplib.image.mask as zpl_mask
 import freeimage
 
 from . import worm_data
 from . import load_data
 from . import worm_spline
 from . import measure_fluor
+from . import process_images
 
 DERIVED_ROOT = 'derived_data'
 
@@ -140,7 +146,7 @@ def gmm_lawn_maker(image, optocoupler, return_model=False):
         lawn mask as a bool ndarray
         fitted GMM model
     '''
-    scaled_image = ndi_filters.median_filter(image, size=(3,3), mode='constant')
+    scaled_image = filters.median_filter(image, size=(3,3), mode='constant')
     vignette_mask = process_images.vignette_mask(optocoupler, image.shape)
 
     img_data = scaled_image[vignette_mask]
