@@ -7,7 +7,6 @@ import json
 import numpy
 import collections
 import datetime
-import pickle
 
 from scipy.ndimage import filters
 from skimage import mixture
@@ -95,9 +94,6 @@ def annotate_lawn(experiment_root, position, metadata, annotations):
     lawn_mask_root = experiment_root / 'derived_data' / 'lawn_masks'
     lawn_mask_root.mkdir(parents=True, exist_ok=True)
 
-    lawn_model_root = experiment_root / 'derived_data' / 'lawn_models'
-    lawn_model_root.mkdir(parents=True, exist_ok=True)
-
     microns_per_pixel = process_images.microns_per_pixel(metadata['objective'],metadata['optocoupler'])
 
     position_images = load_data.scan_experiment_dir(experiment_root)[position]
@@ -120,15 +116,6 @@ def annotate_lawn(experiment_root, position, metadata, annotations):
 
     vignette_mask = process_images.vignette_mask(metadata['optocoupler'], lawn_mask.shape)
 
-    with (lawn_model_root / f'{position}.pickle').open('wb') as lm_file:
-        gmm_means = gmm_model.means_.flatten()
-        gmm_stds = numpy.sqrt(gmm_model.covariances_.flatten())
-        sorting_idxs = gmm_means.argsort()
-        gmm_means, gmm_stds = gmm_means[sorting_idxs], gmm_stds[sorting_idxs] # First one is lawn (since less intensity is darker)
-
-        model_features = {'lawn_mean':gmm_means[0], 'background_mean':gmm_means[1],
-            'lawn_std': gmm_stds[0], 'background_std': gmm_stds[1]}
-        pickle.dump(model_features, lm_file)
     freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png')) # Some better way to store this mask in the annotations?
     annotations['lawn_area'] = lawn_mask.sum() * microns_per_pixel**2
 
