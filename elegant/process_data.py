@@ -8,12 +8,7 @@ import numpy
 import collections
 import datetime
 
-from scipy.ndimage import filters
-from skimage import mixture
-
 from zplib.curve import spline_geometry
-from zplib.curve import interpolate
-import zplib.image.mask as zpl_mask
 import freeimage
 
 from . import worm_data
@@ -21,6 +16,7 @@ from . import load_data
 from . import worm_spline
 from . import measure_fluor
 from . import process_images
+from . import segment_images
 
 DERIVED_ROOT = 'derived_data'
 
@@ -102,52 +98,11 @@ def annotate_lawn(experiment_root, position, metadata, annotations, num_images_f
     first_images = [process_images.pin_image_mode(image, optocoupler=metadata['optocoupler'])
         for image in first_images]
 
-    individual_lawns = [gmm_lawn_maker(image, metadata['optocoupler']) for image in first_images]
+    individual_lawns = [segment_images.gmm_lawn_maker(image, metadata['optocoupler']) for image in first_images]
     lawn_mask = numpy.bitwise_or.reduce(individual_lawns, axis=0)
 
     freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png'))
     annotations['lawn_area'] = lawn_mask.sum() * microns_per_pixel**2
-
-def gmm_lawn_maker(image, optocoupler, return_model=False):
-    '''Find a lawn in an image use Gaussian mixture modeling (GMM)
-
-    This lawn maker models an image (i.e. its pixel intensities) as as mixture
-        of two Gaussian densities. Each corresponds to either the background & lawn.
-
-    Parameters:
-        image - numpy ndarray of the image to find the lawn from
-        optocoupler - optocoupler magnification (as a float) used for the specified image
-
-    Returns:
-        lawn mask as a bool ndarray
-        fitted GMM model
-    '''
-    scaled_image = filters.median_filter(image, size=(3,3), mode='constant')
-    vignette_mask = process_images.vignette_mask(optocoupler, image.shape)
-
-    img_data = scaled_image[vignette_mask]
-    img_hist = numpy.bincount(img_data.flatten())
-    img_hist = img_hist/img_hist.sum()
-
-    gmm = mixture.GaussianMixture(n_components=2)
-    gmm.fit(numpy.expand_dims(img_data,1))
-
-    # Calculate boundary point for label classification as intensity threshold
-    gmm_support = numpy.linspace(0,2**16-1,2**16)
-
-    labels = gmm.predict(numpy.reshape(gmm_support, (-1,1)))
-    thr = numpy.argmax(numpy.abs(numpy.diff(labels)))
-    lawn_mask = (scaled_image < thr) & vignette_mask
-
-    lawn_mask = morphology.binary_erosion(lawn_mask, iterations=10)
-    lawn_mask = zpl_mask.get_largest_object(lawn_mask)
-    lawn_mask = morphology.binary_fill_holes(lawn_mask)
-    lawn_mask = morphology.binary_dilation(lawn_mask, iterations=10)
-
-    if return_model:
-        return lawn_mask, gmm
-    else:
-        return lawn_mask
 
 def set_hatch_time(experiment_root, year, month, day, hour):
     """Manually set a hatch-time for all worms in an experiment.
