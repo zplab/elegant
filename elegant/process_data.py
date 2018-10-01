@@ -85,9 +85,8 @@ def annotate_stage_pos(experiment_root, position, metadata, annotations):
     annotations['stage_y'] = y
     annotations['starting_stage_z'] = z
 
-def annotate_lawn(experiment_root, position, metadata, annotations):
+def annotate_lawn(experiment_root, position, metadata, annotations, num_images_for_lawn=3):
     '''Position annotator used to find the lawn and associated metadata about it'''
-    num_images_for_lawn = 3
 
     print(f'Working on position {position}')
     position_root = experiment_root / position
@@ -107,13 +106,9 @@ def annotate_lawn(experiment_root, position, metadata, annotations):
     first_images = list(map(freeimage.read, first_imagepaths))
     first_images = [process_images.pin_image_mode(image, optocoupler=metadata['optocoupler'])
         for image in first_images]
-    median_first_images = numpy.median(first_images, axis=0)
 
     individual_lawns = [gmm_lawn_maker(image, metadata['optocoupler']) for image in first_images]
     lawn_mask = numpy.max(individual_lawns, axis=0)
-
-    median_lm, gmm_model = gmm_lawn_maker(median_first_images.astype('int'), metadata['optocoupler'], return_model=True)
-
     vignette_mask = process_images.vignette_mask(metadata['optocoupler'], lawn_mask.shape)
 
     freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png')) # Some better way to store this mask in the annotations?
