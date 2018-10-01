@@ -16,6 +16,7 @@ from . import worm_data
 from . import load_data
 from . import worm_spline
 from . import measure_fluor
+from . import process_images
 
 DERIVED_ROOT = 'derived_data'
 
