@@ -1,15 +1,12 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
 import pathlib
-import itertools
 import multiprocessing
 import json
 import numpy
-import collections
 import datetime
 
 from zplib.curve import spline_geometry
-from zplib.curve import interpolate
 import freeimage
 
 from . import worm_data
@@ -253,7 +250,7 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
 
 def _multiprocess_measure(experiment_root, positions, measures, measurement_name, n_jobs):
     job_position_names = numpy.array_split(list(positions.keys()), n_jobs)
-    job_positions = [{name:positions[name] for name in names} for names in job_position_names]
+    job_positions = [{name: positions[name] for name in names} for names in job_position_names]
     job_args = [(experiment_root, job_pos, measures, measurement_name) for job_pos in job_positions]
     with multiprocessing.Pool(processes=n_jobs) as pool:
         pool.starmap(measure_worms, job_args)
@@ -383,7 +380,7 @@ class _FluorMeasureBase:
         image = freeimage.read(image_file)
         flatfield = freeimage.read(position_root.parent / 'calibrations' / f'{timepoint} fl_flatfield.tiff')
         image = image.astype(numpy.float32) * flatfield
-        mask = self.get_mask(position_root, derived_root, timepoint, annotations)
+        mask = self.get_mask(position_root, derived_root, timepoint, annotations, image.shape)
         if mask is None:
             return [numpy.nan] * len(self.feature_names)
         if mask.sum() == 0:
@@ -395,10 +392,10 @@ class _FluorMeasureBase:
             color_mask = measure_fluor.colorize_masks(mask, region_masks)
             out_dir = derived_root / 'fluor_region_masks' / position_root.name
             out_dir.mkdir(parents=True, exist_ok=True)
-            freeimage.write(color, out_dir / f'{timepoint} {self.image_type}.png')
+            freeimage.write(color_mask, out_dir / f'{timepoint} {self.image_type}.png')
         return data
 
-    def get_mask(self, position_root, derived_root, timepoint, annotations):
+    def get_mask(self, position_root, derived_root, timepoint, annotations, shape):
         raise NotImplementedError
 
 
@@ -432,7 +429,7 @@ class FluorMeasurements(_FluorMeasureBase):
         self.pose_annotation = pose_annotation
         super().__init__(image_type, write_masks)
 
-    def get_mask(self, position_root, derived_root, timepoint, annotations):
+    def get_mask(self, position_root, derived_root, timepoint, annotations, shape):
         center_tck, width_tck = annotations.get(self.pose_annotation, (None, None))
         if center_tck is None or width_tck is None:
             print(f'No pose data found for {position_root.name} at {timepoint}.')
@@ -440,7 +437,7 @@ class FluorMeasurements(_FluorMeasureBase):
         else:
             # NB: it's WAY faster to regenerate a mask from the splines than to read it in,
             # even if the file is in the disk cache. Strange but true.
-            return worm_spline.lab_frame_mask(center_tck, width_tck, image.shape)
+            return worm_spline.lab_frame_mask(center_tck, width_tck, shape)
 
 
 class MaskFluorMeasurements(_FluorMeasureBase):
@@ -471,10 +468,12 @@ class MaskFluorMeasurements(_FluorMeasureBase):
         self.mask_name = mask_name
         super().__init__(image_type, write_masks)
 
-    def get_mask(self, position_root, derived_root, timepoint, annotations):
+    def get_mask(self, position_root, derived_root, timepoint, annotations, shape):
         mask_file = derived_root / 'mask' / position_root.name / f'{timepoint} {self.mask_name}.png'
         if not mask_file.exists():
             print(f'No mask file found for {position_root.name} at {timepoint}.')
             return None
         else:
-            return freeimage.read(mask_file)
+            mask = freeimage.read(mask_file)
+            assert mask.shape == shape
+            return mask

@@ -192,11 +192,11 @@ def _trace_costs(cost_image, roughness_penalty):
     """
     # set start and end points for the traceback
     # we have multiple start sites in case the head does not start at zero width
-    starts = [(0,i) for i in range(6)]
+    starts = [(0, i) for i in range(6)]
     ends = [(cost_image.shape[0]-1, 0)] # assume the tail ends at zero width though
 
     # begin edge detection
-    offsets = [(1,-1), (1,0), (1,1)] # allow straight forward or up/down diagonal moves
+    offsets = [(1, -1), (1, 0), (1, 1)] # allow straight forward or up/down diagonal moves
     mcp = _SmoothMCP(cost_image, roughness_penalty, offsets=offsets)
     mcp.find_costs(starts, ends)
     route = mcp.traceback(ends[0])

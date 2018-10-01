@@ -1,8 +1,6 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
 from PyQt5 import Qt
-import numpy
-from zplib.image import colorize
 from ris_widget.qwidgets import annotator
 from ris_widget.overlay import point_set
 
