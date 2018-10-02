@@ -6,9 +6,9 @@ import pkg_resources
 import subprocess
 import tempfile
 
+import numpy
 from scipy import ndimage
-from skimage import mixture
-
+from sklearn import mixture
 
 import freeimage
 import zplib.image.mask as zpl_mask
@@ -144,38 +144,42 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
                 current_annotation[annotation] = pose
             current_annotation[original_annotation] = pose
 
-def find_lawn(image, optocoupler, return_model=False):
-    '''Find a lawn in an image use Gaussian mixture modeling (GMM)
+def find_lawn_from_images(images, optocoupler):
+    """Find bacterial lawn from a set of images."""
+    images = [process_images.pin_image_mode(image, optocoupler=optocoupler) for image in images]
+    lawns = [find_lawn_in_image(image, optocoupler) for image in images]
+    return numpy.bitwise_or.reduce(lawns, axis=0)
+
+def find_lawn_in_image(image, optocoupler, return_model=False):
+    """Find a lawn in an image use Gaussian mixture modeling (GMM)
 
     This lawn maker models an image (i.e. its pixel intensities) as as mixture
         of two Gaussian densities. Each corresponds to either the background & lawn.
 
     Parameters:
-        image - numpy ndarray of the image to find the lawn from
-        optocoupler - optocoupler magnification (as a float) used for the specified image
+        image: numpy ndarray of the image to find the lawn from
+        optocoupler: optocoupler magnification (as a float) used for the specified image
+        return model: if True, return the GMM fit to the images.
 
-    Returns:
-        lawn mask as a bool ndarray
-        fitted GMM model
-    '''
+    Returns: lawn_mask or (lawn_mask, gmm_model)
+        lawn mask: bool ndarray
+        gmm_model: if return_model is True, also return the fitted GMM model
+    """
     filtered_image = ndimage.filters.median_filter(image, size=(3,3), mode='constant')
     vignette_mask = process_images.vignette_mask(optocoupler, image.shape)
 
     img_data = filtered_image[vignette_mask]
-    img_hist = numpy.bincount(img_data.flatten())
-    img_hist = img_hist/img_hist.sum()
-
     gmm = mixture.GaussianMixture(n_components=2)
-    gmm.fit(numpy.expand_dims(img_data,1))
+    gmm.fit(numpy.expand_dims(img_data, 1))
 
     # Calculate boundary point for label classification as intensity threshold
-    gmm_support = numpy.linspace(0,2**16-1,2**16)
+    gmm_support = numpy.linspace(0, 2**16-1, 2**16)
 
     labels = gmm.predict(numpy.reshape(gmm_support, (-1,1)))
     thr = numpy.argmax(numpy.abs(numpy.diff(labels)))
     lawn_mask = (filtered_image < thr) & vignette_mask
 
-    # Do some smoothing of the lawn by eroding, then grabbing the largest object afterwards.
+    # Smooth the lawn mask by eroding, grabbing the largest object, and dilating back
     lawn_mask = ndimage.morphology.binary_erosion(lawn_mask, iterations=10)
     lawn_mask = zpl_mask.get_largest_object(lawn_mask)
     lawn_mask = ndimage.morphology.binary_fill_holes(lawn_mask)

@@ -80,26 +80,16 @@ def annotate_stage_pos(experiment_root, position, metadata, annotations):
     annotations['starting_stage_z'] = z
 
 def annotate_lawn(experiment_root, position, metadata, annotations, num_images_for_lawn=3):
-    '''Position annotator used to find the lawn and associated metadata about it'''
-
+    """Position annotator used to find the lawn and associated metadata about it"""
     print(f'Working on position {position}')
-    position_root = experiment_root / position
-    lawn_mask_root = experiment_root / 'derived_data' / 'lawn_masks'
+
+    image_paths = sorted((experiment_root / position).glob('* bf.png'))[:num_images_for_lawn]
+    lawn_mask = segment_images.find_lawn_from_images(map(freeimage.read, image_paths), metadata['optocoupler'])
+    lawn_mask_root = experiment_root / DERIVED_ROOT / 'lawn_masks'
     lawn_mask_root.mkdir(parents=True, exist_ok=True)
+    freeimage.write(lawn_mask.astype(numpy.uint8)*255, lawn_mask_root / f'{position}.png')
 
-    microns_per_pixel = process_images.microns_per_pixel(metadata['objective'],metadata['optocoupler'])
-
-    position_images = load_data.scan_experiment_dir(experiment_root)[position]
-    first_imagepaths = sorted(position_root.glob('* bf.png'))[:num_images_for_lawn]
-
-    first_images = [freeimage.read(str(image_path)) for image_path in first_imagepaths]
-    first_images = [process_images.pin_image_mode(image, optocoupler=metadata['optocoupler'])
-        for image in first_images]
-
-    individual_lawns = [segment_images.find_lawn(image, metadata['optocoupler']) for image in first_images]
-    lawn_mask = numpy.bitwise_or.reduce(individual_lawns, axis=0)
-
-    freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png'))
+    microns_per_pixel = process_images.microns_per_pixel(metadata['objective'], metadata['optocoupler'])
     annotations['lawn_area'] = lawn_mask.sum() * microns_per_pixel**2
 
 def set_hatch_time(experiment_root, year, month, day, hour):
@@ -336,6 +326,7 @@ class BasicMeasurements:
     considered the basic set of useful information about each worm.
     """
     feature_names = ['timestamp', 'stage', 'stage_z']
+
     def measure(self, position_root, timepoint, annotations, before, after):
         return annotations['timestamp'], annotations['stage'], annotations['stage_z']
 
@@ -504,7 +495,10 @@ class MaskFluorMeasurements(_FluorMeasureBase):
             return mask
 
 class LawnMeasurements:
+    """Provide data columns based on lawn masks."""
+
     feature_names = ['summed_lawn_intensity', 'median_lawn_intensity', 'background_intensity']
+
     def __init__(self):
         self._optocouplers = {}
 
@@ -534,4 +528,3 @@ class LawnMeasurements:
         measures['background_intensity'] = numpy.median(rescaled_image[~lawn_mask & vignette_mask])
 
         return [measures[feature_name] for feature_name in self.feature_names]
-=======
