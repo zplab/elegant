@@ -98,7 +98,7 @@ def annotate_lawn(experiment_root, position, metadata, annotations, num_images_f
     first_images = [process_images.pin_image_mode(image, optocoupler=metadata['optocoupler'])
         for image in first_images]
 
-    individual_lawns = [segment_images.gmm_lawn_maker(image, metadata['optocoupler']) for image in first_images]
+    individual_lawns = [segment_images.find_lawn(image, metadata['optocoupler']) for image in first_images]
     lawn_mask = numpy.bitwise_or.reduce(individual_lawns, axis=0)
 
     freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png'))

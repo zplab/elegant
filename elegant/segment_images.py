@@ -7,8 +7,7 @@ import pkg_resources
 import subprocess
 import tempfile
 
-from scipy.ndimage import filters
-from scipy.ndimage import morphology
+from scipy import ndimage
 from skimage import mixture
 
 
@@ -147,7 +146,7 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
                 current_annotation[annotation] = pose
             current_annotation[original_annotation] = pose
 
-def gmm_lawn_maker(image, optocoupler, return_model=False):
+def find_lawn(image, optocoupler, return_model=False):
     '''Find a lawn in an image use Gaussian mixture modeling (GMM)
 
     This lawn maker models an image (i.e. its pixel intensities) as as mixture
@@ -161,7 +160,7 @@ def gmm_lawn_maker(image, optocoupler, return_model=False):
         lawn mask as a bool ndarray
         fitted GMM model
     '''
-    filtered_image = filters.median_filter(image, size=(3,3), mode='constant')
+    filtered_image = ndimage.filters.median_filter(image, size=(3,3), mode='constant')
     vignette_mask = process_images.vignette_mask(optocoupler, image.shape)
 
     img_data = filtered_image[vignette_mask]
@@ -178,10 +177,10 @@ def gmm_lawn_maker(image, optocoupler, return_model=False):
     thr = numpy.argmax(numpy.abs(numpy.diff(labels)))
     lawn_mask = (filtered_image < thr) & vignette_mask
 
-    lawn_mask = morphology.binary_erosion(lawn_mask, iterations=10)
+    lawn_mask = ndimage.morphology.binary_erosion(lawn_mask, iterations=10)
     lawn_mask = zpl_mask.get_largest_object(lawn_mask)
-    lawn_mask = morphology.binary_fill_holes(lawn_mask)
-    lawn_mask = morphology.binary_dilation(lawn_mask, iterations=10)
+    lawn_mask = ndimage.morphology.binary_fill_holes(lawn_mask)
+    lawn_mask = ndimage.morphology.binary_dilation(lawn_mask, iterations=10)
 
     if return_model:
         return lawn_mask, gmm
