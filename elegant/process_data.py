@@ -481,21 +481,24 @@ class MaskFluorMeasurements(_FluorMeasureBase):
 
 class LawnMeasurements:
     feature_names = ['summed_lawn_intensity', 'median_lawn_intensity', 'background_intensity']
+    def __init__(self):
+        self._optocouplers = {}
 
     def measure(self, position_root, timepoint, annotations, before, after):
         measures = {}
-
-        # Load metadata.... TODO ask Zach if this can be a feature of the measurement signature
         experiment_root, position_name = position_root.parent, position_root.name
-        with (experiment_root / 'experiment_metadata.json').open('r') as md_file:
-            metadata = json.load(md_file)
+        derived_root = experiment_root / DERIVED_ROOT
+
+        if experiment_root not in self._optocouplers:
+            self._optocouplers[experiment_root] = load_data.read_metadata(experiment_root)['optocoupler']
+        optocoupler = self._optocouplers[experiment_root]
 
         timepoint_imagepath = position_root / (timepoint + ' bf.png')
         timepoint_image = freeimage.read(timepoint_imagepath)
-        rescaled_image = process_images.pin_image_mode(timepoint_image, optocoupler=metadata['optocoupler'])
+        rescaled_image = process_images.pin_image_mode(timepoint_image, optocoupler=optocoupler)
 
-        lawn_mask = freeimage.read(experiment_root / 'derived_data' / 'lawn_masks' / f'{position_name}.png').astype('bool')
-        vignette_mask = process_images.vignette_mask(metadata['optocoupler'], timepoint_image.shape)
+        lawn_mask = freeimage.read(derived_root / 'lawn_masks' / f'{position_name}.png').astype('bool')
+        vignette_mask = process_images.vignette_mask(optocoupler, timepoint_image.shape)
 
         # Remove the animal from the lawn if possible.
         center_tck, width_tck = annotations.get('pose', (None, None))
