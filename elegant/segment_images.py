@@ -177,6 +177,7 @@ def find_lawn(image, optocoupler, return_model=False):
     thr = numpy.argmax(numpy.abs(numpy.diff(labels)))
     lawn_mask = (filtered_image < thr) & vignette_mask
 
+    # Do some smoothing of the lawn by eroding, then grabbing the largest object afterwards.
     lawn_mask = ndimage.morphology.binary_erosion(lawn_mask, iterations=10)
     lawn_mask = zpl_mask.get_largest_object(lawn_mask)
     lawn_mask = ndimage.morphology.binary_fill_holes(lawn_mask)
