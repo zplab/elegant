@@ -477,7 +477,7 @@ class Worm(object):
         return numpy.interp(age, ages, value)
 
     def smooth_feature(self, feature, filter=uniform_filter, age_feature='age',
-            min_age=-numpy.inf, max_age=numpy.inf, **filter_params):
+                       min_age=-numpy.inf, max_age=numpy.inf, **filter_params):
         """Smooth a feature with a given filter-function.
 
         Data points within a given age range will be smooothed with a given
@@ -565,7 +565,7 @@ class Worm(object):
             if hasattr(self, k):
                 assert numpy.all(v == getattr(self, k))
             else:
-                setattr(our_worm, k, v)
+                setattr(self, k, v)
 
     def _unify_timecourses(self, other):
         new_timepoints = numpy.unique(numpy.concatenate([self.td.timepoint, other.td.timepoint]))

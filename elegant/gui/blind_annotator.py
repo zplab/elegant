@@ -24,7 +24,7 @@ class BlindedExperimentAnnotator(experiment_annotator.ExperimentAnnotator):
                 load_position_index() method.
         """
 
-        experiment_name = f'Blinded ({len(positions_dicts)} experiments)'
+        experiment_name = f'Blinded ({len(position_names)} experiments)'
         positions = (position_names, position_data)
         super().__init__(ris_widget, experiment_name, positions, annotation_fields, start_position=None, readonly=False)
 

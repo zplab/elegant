@@ -2,14 +2,12 @@
 
 import pathlib
 import os
-import numpy
 import pkg_resources
 import subprocess
 import tempfile
 
 import freeimage
 
-from . import process_data
 from . import load_data
 from . import worm_spline
 
@@ -48,7 +46,7 @@ def segment_images(images_and_outputs, model, use_gpu=True):
     if '/' not in model:
         if not HAS_SEGMENTER:
             raise ValueError('Model name without path specified but "worm_segmenter" module with models not installed.')
-        model = pkg_resources.resource_filename('worm_segmenter','models/' + model)
+        model = pkg_resources.resource_filename('worm_segmenter', 'models/' + model)
     mcr_root = pathlib.Path(MATLAB_RUNTIME)
     ld_path = os.pathsep.join(str(mcr_root / mat_dir / 'glnxa64') for mat_dir in ('runtime', 'bin', 'sys/os', 'extern/bin'))
     env = dict(LD_LIBRARY_PATH=ld_path)

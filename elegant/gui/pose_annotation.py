@@ -1,11 +1,8 @@
 # This code is licensed under the MIT License (see LICENSE file for details)
 
 import collections
-import pickle
-import pkg_resources
 from PyQt5 import Qt
 
-from zplib.curve import interpolate
 from ris_widget.qwidgets import annotator
 
 from .spline_overlay import spline_outline
@@ -274,4 +271,3 @@ class PoseAnnotation(annotator.AnnotationField):
     def show_or_hide_outline(self, show):
         self.outline.setVisible(show) # in lab frame of reference
         self.outline.width_spline.setVisible(show) # in worm frame
-

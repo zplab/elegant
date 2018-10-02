@@ -60,12 +60,12 @@ def _get_centerline(mask):
     # 1-values in structure2 are where we require a False in the input for a True output
     # so: structure1 requires a point in the middle of a 3x3 neighborhoood be True
     # and structure2 requires that it be an endpoint with exactly one axial neighbor
-    structure1 = numpy.array([[0,0,0],[0,1,0],[0,0,0]])
-    structure2 = numpy.array([[1,0,1],[1,0,1],[1,1,1]])
+    structure1 = numpy.array([[0,0,0], [0,1,0], [0,0,0]])
+    structure2 = numpy.array([[1,0,1], [1,0,1], [1,1,1]])
     # return the union of all places that structure2 matches, when rotated to all four orientations
     endpoints = _rotated_hit_or_miss(skeleton, structure1, structure2)
     # now modify structure2 to signal when there is exactly one diagonal neighbor
-    structure2 = numpy.array([[0,1,1],[1,0,1],[1,1,1]])
+    structure2 = numpy.array([[0,1,1], [1,0,1], [1,1,1]])
     endpoints |= _rotated_hit_or_miss(skeleton, structure1, structure2)
     ep_indices = numpy.transpose(endpoints.nonzero())
 
@@ -73,7 +73,7 @@ def _get_centerline(mask):
     skeleton[skeleton == 0] = numpy.inf
     mcp = graph.MCP(skeleton)
     longest_traceback = []
-    #compute costs for every endpoint pair
+    # compute costs for every endpoint pair
     for i, endpoint in enumerate(ep_indices[:-1]):
         remaining_indices = ep_indices[i+1:]
         costs = mcp.find_costs([endpoint], remaining_indices)[0]

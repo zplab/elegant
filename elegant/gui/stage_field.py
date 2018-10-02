@@ -28,7 +28,7 @@ class StageField(annotator.AnnotationField):
         """
         assert len(transitions) == len(stages) - 1
         self.stages = stages
-        self.stage_indices = {stage:i for i, stage in enumerate(stages)}
+        self.stage_indices = {stage: i for i, stage in enumerate(stages)}
         self.transitions = transitions
         if shortcuts is None:
             # take the first letter of each as the shortcut
@@ -109,4 +109,4 @@ class StageField(annotator.AnnotationField):
             timepoint_annotations.append(page.annotations)
         if not hasattr(self, 'position_annotations'):
             return
-        hatch_timestamp = process_data._update_ages(timepoint_annotations, self.position_annotations, self.name, self.stages[0])
+        process_data._update_ages(timepoint_annotations, self.position_annotations, self.name, self.stages[0])

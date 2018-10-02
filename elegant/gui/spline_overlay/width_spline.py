@@ -4,9 +4,7 @@ from PyQt5 import Qt
 import numpy
 
 from zplib.curve import interpolate
-
 from ris_widget import shared_resources
-from ris_widget.overlay import base
 
 from . import center_spline
 

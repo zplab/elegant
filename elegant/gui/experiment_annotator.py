@@ -2,7 +2,6 @@
 
 import atexit
 import pathlib
-import pickle
 
 from PyQt5 import Qt
 
@@ -218,7 +217,7 @@ class ExperimentAnnotator:
         self.ris_widget.annotator.update_fields()
 
     def save_annotations(self):
-        if self.readonly == True:
+        if self.readonly is True:
             return
         for page in self.ris_widget.flipbook_pages:
             self.timepoint_annotations[page._timepoint_name] = getattr(page, 'annotations', {})

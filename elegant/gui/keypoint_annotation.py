@@ -94,5 +94,5 @@ class KeypointAnnotation(annotator.AnnotationField):
             prev_remaining = len(self.keypoint_names)
         else:
             prev_remaining = len([v for v in old_named_points.values() if v is None])
-        new_remaining = len([v for v in new_named_points.values() if v is  None])
+        new_remaining = len([v for v in new_named_points.values() if v is None])
         return prev_remaining > 0 and new_remaining == 0

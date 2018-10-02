@@ -100,7 +100,6 @@ def compose_image(ris_widget, roi=None, downsample_factor=None, fast_downsample=
     """
     if downsample_factor is not None and fast_downsample:
         fast_downsample = int(downsample_factor) != downsample_factor
-    images_out = []
     use_roi = False
     if roi is not None and roi.geometry is not None:
         (x1, y1), (x2, y2) = numpy.round(roi.geometry).astype(int)
@@ -138,7 +137,7 @@ def generate_images_from_flipbook(ris_widget, roi=None, downsample_factor=None, 
     in zplib.image.write_movie.
     """
     for layer_images in ris_widget.flipbook_pages:
-        yield compose_images(ris_widget, roi, downsample_factor, fast_downsample, layer_images)
+        yield compose_image(ris_widget, roi, downsample_factor, fast_downsample, layer_images)
 
 def pin_flipbook_modes(ris_widget, layer=0, noise_floor=200, new_mode=24000, optocoupler=None):
     """For every image in a given layer in the flipbook, pin its modal value

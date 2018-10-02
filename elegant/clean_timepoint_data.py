@@ -1,9 +1,6 @@
 import pathlib
 import shutil
 import json
-import datetime
-
-import numpy
 
 from zplib import datafile
 
@@ -57,7 +54,7 @@ def remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=
 
     position_annotation_file = experiment_root / 'annotations' / f'{position}.pickle'
     if position_annotation_file.exists():
-        general_annotations,timepoint_annotations = load_data.read_annotation_file(position_annotation_file)
+        general_annotations, timepoint_annotations = load_data.read_annotation_file(position_annotation_file)
 
         if timepoint in timepoint_annotations:
             print(f'Found entry for removal in annotation for position {position}')
@@ -90,7 +87,7 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     for position in positions:
         remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=dry_run)
 
-    md_file = (experiment_root/'experiment_metadata.json')
+    md_file = (experiment_root / 'experiment_metadata.json')
     with md_file.open() as md_fp:
         expt_md = json.load(md_fp)
 
@@ -100,7 +97,7 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
         print('Timepoint not found in experiment_metadata')
         return
 
-    for list_entry_type in ['durations','timestamps','timepoints']:
+    for list_entry_type in ['durations', 'timestamps', 'timepoints']:
         del expt_md[list_entry_type][timepoint_idx]
 
     for dict_entry_type in ['brightfield metering', 'fluorescent metering', 'humidity', 'temperature']:
@@ -108,7 +105,7 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
 
     datafile.json_encode_atomic_legible_to_file(expt_md, md_file)
 
-def remove_excluded_positions(experiment_root,dry_run=False):
+def remove_excluded_positions(experiment_root, dry_run=False):
     """Deletes excluded positions from an experiment directory
 
     This function deletes position folders and any previously made masks from the specified experiment directory,
@@ -134,16 +131,16 @@ def remove_excluded_positions(experiment_root,dry_run=False):
         if (experiment_root / position).exists():
             print(f'Found an excluded position to delete {position}')
             if not dry_run:
-                (excluded_root / position).mkdir(parents=True,exist_ok=True)
-                (excluded_root / 'annotations').mkdir(parents=True,exist_ok=True)
+                (excluded_root / position).mkdir(parents=True, exist_ok=True)
+                (excluded_root / 'annotations').mkdir(parents=True, exist_ok=True)
 
                 shutil.copy(experiment_root / position / 'position_metadata.json',
-                    excluded_root / position / 'position_metadata.json')
+                            excluded_root / position / 'position_metadata.json')
                 shutil.copy(experiment_root / 'annotations' / f'{position}.pickle',
-                    excluded_root / 'annotations' / f'{position}.pickle')
+                            excluded_root / 'annotations' / f'{position}.pickle')
                 if not (excluded_root / 'experiment_metadata.json').exists():
-                    shutil.copy(experiment_root /  'experiment_metadata.json',
-                        excluded_root / 'experiment_metadata.json')
+                    shutil.copy(experiment_root / 'experiment_metadata.json',
+                                excluded_root / 'experiment_metadata.json')
 
                 shutil.rmtree(experiment_root / position)
                 (experiment_root / 'annotations' / f'{position}.pickle').unlink()
@@ -151,7 +148,7 @@ def remove_excluded_positions(experiment_root,dry_run=False):
                     shutil.rmtree(experiment_root / 'derived_data' / 'mask' / position)
 
                 # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
-                md_file = (experiment_root /  'experiment_metadata.json')
+                md_file = (experiment_root / 'experiment_metadata.json')
                 with md_file.open('r') as md_fp:
                     expt_md = json.load(md_fp)
                 del expt_md['positions'][position]

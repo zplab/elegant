@@ -143,7 +143,7 @@ class CenterSpline(base.RWGeometryItemMixin, Qt.QGraphicsPathItem):
 
     def _extend_endpoint(self, pos):
         new_end = numpy.array([pos.x(), pos.y()])
-        old_ends = self._points[[0,-1]]
+        old_ends = self._points[[0, -1]]
         dists = ((old_ends - new_end)**2).sum(axis=1)
         if dists[0] < dists[1]:
             new_points = [[new_end], self._points]
