@@ -6,10 +6,16 @@ import pkg_resources
 import subprocess
 import tempfile
 
+from scipy import ndimage
+from skimage import mixture
+
+
 import freeimage
+import zplib.image.mask as zpl_mask
 
 from . import load_data
 from . import worm_spline
+from . import process_images
 
 try:
     import worm_segmenter
@@ -137,6 +143,48 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
             if need_annotation:
                 current_annotation[annotation] = pose
             current_annotation[original_annotation] = pose
+
+def find_lawn(image, optocoupler, return_model=False):
+    '''Find a lawn in an image use Gaussian mixture modeling (GMM)
+
+    This lawn maker models an image (i.e. its pixel intensities) as as mixture
+        of two Gaussian densities. Each corresponds to either the background & lawn.
+
+    Parameters:
+        image - numpy ndarray of the image to find the lawn from
+        optocoupler - optocoupler magnification (as a float) used for the specified image
+
+    Returns:
+        lawn mask as a bool ndarray
+        fitted GMM model
+    '''
+    filtered_image = ndimage.filters.median_filter(image, size=(3,3), mode='constant')
+    vignette_mask = process_images.vignette_mask(optocoupler, image.shape)
+
+    img_data = filtered_image[vignette_mask]
+    img_hist = numpy.bincount(img_data.flatten())
+    img_hist = img_hist/img_hist.sum()
+
+    gmm = mixture.GaussianMixture(n_components=2)
+    gmm.fit(numpy.expand_dims(img_data,1))
+
+    # Calculate boundary point for label classification as intensity threshold
+    gmm_support = numpy.linspace(0,2**16-1,2**16)
+
+    labels = gmm.predict(numpy.reshape(gmm_support, (-1,1)))
+    thr = numpy.argmax(numpy.abs(numpy.diff(labels)))
+    lawn_mask = (filtered_image < thr) & vignette_mask
+
+    # Do some smoothing of the lawn by eroding, then grabbing the largest object afterwards.
+    lawn_mask = ndimage.morphology.binary_erosion(lawn_mask, iterations=10)
+    lawn_mask = zpl_mask.get_largest_object(lawn_mask)
+    lawn_mask = ndimage.morphology.binary_fill_holes(lawn_mask)
+    lawn_mask = ndimage.morphology.binary_dilation(lawn_mask, iterations=10)
+
+    if return_model:
+        return lawn_mask, gmm
+    else:
+        return lawn_mask
 
 def _get_pose(mask, timepoint_annotations, timepoint_name, width_estimator):
     center_tck, width_tck = worm_spline.pose_from_mask(mask)

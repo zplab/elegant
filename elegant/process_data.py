@@ -14,6 +14,7 @@ from . import load_data
 from . import worm_spline
 from . import measure_fluor
 from . import process_images
+from . import segment_images
 
 DERIVED_ROOT = 'derived_data'
 
@@ -77,6 +78,29 @@ def annotate_stage_pos(experiment_root, position, metadata, annotations):
     annotations['stage_x'] = x
     annotations['stage_y'] = y
     annotations['starting_stage_z'] = z
+
+def annotate_lawn(experiment_root, position, metadata, annotations, num_images_for_lawn=3):
+    '''Position annotator used to find the lawn and associated metadata about it'''
+
+    print(f'Working on position {position}')
+    position_root = experiment_root / position
+    lawn_mask_root = experiment_root / 'derived_data' / 'lawn_masks'
+    lawn_mask_root.mkdir(parents=True, exist_ok=True)
+
+    microns_per_pixel = process_images.microns_per_pixel(metadata['objective'],metadata['optocoupler'])
+
+    position_images = load_data.scan_experiment_dir(experiment_root)[position]
+    first_imagepaths = sorted(position_root.glob('* bf.png'))[:num_images_for_lawn]
+
+    first_images = [freeimage.read(str(image_path)) for image_path in first_imagepaths]
+    first_images = [process_images.pin_image_mode(image, optocoupler=metadata['optocoupler'])
+        for image in first_images]
+
+    individual_lawns = [segment_images.find_lawn(image, metadata['optocoupler']) for image in first_images]
+    lawn_mask = numpy.bitwise_or.reduce(individual_lawns, axis=0)
+
+    freeimage.write(lawn_mask.astype('uint8')*255, str(lawn_mask_root / f'{position}.png'))
+    annotations['lawn_area'] = lawn_mask.sum() * microns_per_pixel**2
 
 def set_hatch_time(experiment_root, year, month, day, hour):
     """Manually set a hatch-time for all worms in an experiment.
