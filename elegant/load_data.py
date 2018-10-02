@@ -82,7 +82,7 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
     for position_name, timepoints in positions.items():
         filtered_timepoints = collections.OrderedDict()
         for timepoint_name, timepoint_images in timepoints.items():
-            if timepoint_filter is  None or timepoint_filter(position_name, timepoint_name):
+            if timepoint_filter is None or timepoint_filter(position_name, timepoint_name):
                 if channels is None:
                     channel_images = [image_path for channel, image_path in sorted(timepoint_images.items())]
                 else:
@@ -339,13 +339,13 @@ def filter_good_complete(position_name, position_annotations, timepoint_annotati
     """Filter-function for filter_annotations() to return only non-excluded worms
     which have been completely annotated with life stages."""
     return (filter_excluded(position_name, position_annotations, timepoint_annotations) and
-        filter_staged(position_name, position_annotations, timepoint_annotations))
+            filter_staged(position_name, position_annotations, timepoint_annotations))
 
 def filter_good_incomplete(position_name, position_annotations, timepoint_annotations):
     """Filter-function for filter_annotations() to return only non-excluded worms
     which haven't been completely annotated with life stages."""
     return (filter_excluded(position_name, position_annotations, timepoint_annotations) and
-        not filter_staged(position_name, position_annotations, timepoint_annotations))
+            not filter_staged(position_name, position_annotations, timepoint_annotations))
 
 def filter_living_timepoints(position_name, position_annotations, timepoint_annotations):
     """Filter-function for filter_annotations() to return only non-excluded worms

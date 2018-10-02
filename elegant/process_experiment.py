@@ -12,7 +12,6 @@ from zplib.image import threaded_io
 
 from . import load_data
 from . import segment_images
-from . import process_data
 from . import worm_widths
 
 def compress_pngs(experiment_root, timepoints=None,

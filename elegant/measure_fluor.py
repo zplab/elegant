@@ -87,7 +87,7 @@ def colorize_masks(mask, region_masks):
     each nested sub-region is a different color.
     """
     labels = numpy.array(mask, dtype=bool) # make copy, make sure masked area has value = 1
-    for i, region_mask in enumerate(masks):
+    for i, region_mask in enumerate(region_masks):
         labels[region_mask] = i + 2 # region mask values are 2 and up
     color = colorize.colorize_label_image(labels)
     color[labels == 1] = 255 # set the area where the original mask was not obsured to white, instead of the default color
