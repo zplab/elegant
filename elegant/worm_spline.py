@@ -392,7 +392,6 @@ def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
         center_tck, width_tck, standard_width, zoom).T
 
     lab_frame = []
-    dtype = kwargs.get('output')
     for image in images:
         lab_frame_image = numpy.empty(lab_image_shape, dtype=image.dtype if dtype is None else dtype)
         lab_frame_image.fill(cval)
