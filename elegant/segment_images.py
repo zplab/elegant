@@ -139,7 +139,7 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
             need_original = True
         if need_original or need_annotation:
             mask = freeimage.read(mask_path) > 0
-            pose = _get_pose(mask, timepoint_annotations, width_estimator)
+            pose = _get_pose(mask, timepoint_annotations, timepoint_name, width_estimator)
             if need_annotation:
                 current_annotation[annotation] = pose
             current_annotation[original_annotation] = pose
