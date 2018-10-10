@@ -126,6 +126,8 @@ def _get_splines(centerline, widths):
     width_tck = interpolate.fit_nonparametric_spline(x, new_widths, smoothing=0.2*len(centerline))
     return center_tck, width_tck
 
+_HALF_PX_OFFSET = numpy.array([0.5, 0.5])[:, numpy.newaxis, numpy.newaxis]
+
 def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_distance=None,
         standard_length=None, standard_width=None, zoom=1, order=3, dtype=None, **kwargs):
     """Transform images from the lab reference frame to the worm reference frame.
@@ -201,12 +203,16 @@ def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_di
     # 2) define positions along each perpendicular at which to sample the input images.
     # (This is the "offset_distances" variable).
 
-    x = numpy.arange(length, dtype=float)
+    x = numpy.arange(length, dtype=float) + 0.5 # want to sample at pixel centers, not edges
     y = numpy.ones_like(x) * (width / 2)
     worm_frame_centerline = numpy.transpose([x, y])
     centerline, perpendiculars, spline_y = _lab_centerline_and_perps(worm_frame_centerline, (length, width),
         center_tck, width_tck, standard_width, zoom)
-    offsets = numpy.linspace(-sample_distance, sample_distance, width) # distances along each perpendicular across the width of the sample swath
+    # if the far edges of the top and bottom pixels are sample_distance from the centerline,
+    # figure out the position of the *centers* of the top and bottom of the pixels.
+    # i.e. correct for fencepost error
+    sample_max = sample_distance * (width - 1) / width
+    offsets = numpy.linspace(-sample_max, sample_max, width) # distances along each perpendicular across the width of the sample swath
     offset_distances = numpy.multiply.outer(perpendiculars.T, offsets) # shape = (2, length, width)
     centerline = centerline.T[:, :, numpy.newaxis] # from shape = (length, 2) to shape = (2, length, 1)
     sample_coordinates = centerline + offset_distances # shape = (2, length, width)
@@ -218,8 +224,10 @@ def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_di
         else:
             unpack_list = True
             images = [images]
-    worm_frame = [ndimage.map_coordinates(image, sample_coordinates, order=order,
-        output=dtype, **kwargs) for image in images]
+    # subtract half-pixel offset because map_coordinates treats (0,0) as the middle
+    # of the top-left pixel, not the far corner of that pixel.
+    worm_frame = [ndimage.map_coordinates(image, sample_coordinates - _HALF_PX_OFFSET,
+        order=order, output=dtype, **kwargs) for image in images]
     if unpack_list:
         worm_frame = worm_frame[0]
     return worm_frame
@@ -229,7 +237,7 @@ def _lab_centerline_and_perps(coordinates, worm_image_shape, center_tck, width_t
         assert width_tck is not None
 
     worm_frame_x, worm_frame_y = numpy.asarray(coordinates, dtype=float).T
-    x_max, y_max = numpy.array(worm_image_shape) - 1
+    x_max, y_max = numpy.array(worm_image_shape)
     rel_x = worm_frame_x / x_max
     spline_x = rel_x * center_tck[0][-1] # account for zoom / standard length
     spline_y = (worm_frame_y - y_max/2) / zoom
@@ -245,7 +253,6 @@ def _lab_centerline_and_perps(coordinates, worm_image_shape, center_tck, width_t
     if standard_width is not None:
         src_widths = interpolate.spline_evaluate(width_tck, rel_x)
         dst_widths = interpolate.spline_evaluate(standard_width, rel_x)
-        print(src_widths, dst_widths)
         zero_width = dst_widths == 0
         dst_widths[zero_width] = 1 # don't want to divide by zero below
         width_ratios = src_widths / dst_widths # shape = (length,)
@@ -266,7 +273,10 @@ def coordinates_to_lab_frame(coordinates, worm_image_shape, center_tck, width_tc
     those values must be used here as well.
 
     Parameters:
-        coordinates: shape (num_coords, 2) list of coordinates.
+        coordinates: shape (num_coords, 2) list of coordinates. Pixel centers are
+            assumed to be at (0.5, 0.5) increments, so (0, 0) refers to the top-
+            left corner of the top-left pixel, and (w, h) refers to the bottom-
+            right corner of the bottom-right pixel in an image of shape (w, h).
         worm_image_shape: shape of worm image in which the coordinates are defined
         center_tck: centerline spline defining the pose of the worm in the lab
             frame.
@@ -295,7 +305,10 @@ def coordinates_to_worm_frame(coords, worm_image_shape, center_tck, width_tck=No
     those values must be used here as well.
 
     Parameters:
-        coordinates: shape (num_coords, 2) list of coordinates.
+        coordinates: shape (num_coords, 2) list of coordinates. Pixel centers are
+            assumed to be at (0.5, 0.5) increments, so (0, 0) refers to the top-
+            left corner of the top-left pixel, and (w, h) refers to the bottom-
+            right corner of the bottom-right pixel in an image of shape (w, h).
         worm_image_shape: shape of worm image in which the coordinates are defined
         center_tck: centerline spline defining the pose of the worm in the lab
             frame.
@@ -313,13 +326,18 @@ def coordinates_to_worm_frame(coords, worm_image_shape, center_tck, width_tck=No
         assert width_tck is not None
     coords = numpy.asarray(coords)
     oversample = 4 # oversample a bit to get subpixel precision in coordinate locations
-    num_points = worm_image_shape[0] * oversample
+    # add 1 below to correct for fencepost error: want to get samples from left
+    # edge of left pixel to *right* edge of right pixel
+    num_points = (worm_image_shape[0] + 1) * oversample
     points = interpolate.spline_interpolate(center_tck, num_points=num_points) # shape (n, 2)
     kd = spatial.cKDTree(points)
     distances, indices = kd.query(coords)
     # indices is the index into the centerline points array of the closest centerline point
     # for each nonzero mask pixel.
     # distances is the distance from each nonzero mask pixel to that centerline point
+    # worm_frame_x below will range from 0 to worm_image_shape[0], inclusive,
+    # because worm_image_shape[0] is the coordinate of the right-most edge of the
+    # right-most pixel (assuming pixel centers are at (0.5, 0.5))
     worm_frame_x = indices / oversample
 
     nearest_points = points[indices]
@@ -343,8 +361,47 @@ def coordinates_to_worm_frame(coords, worm_image_shape, center_tck, width_tck=No
         # profile, need to go less far into the (standardized) image than the widths
         # would have you believe, so reduce the distances accordingly
         distances *= numpy.interp(indices, numpy.arange(num_points), width_ratios)
-    worm_frame_y = worm_image_shape[1]/2 + side*distances*zoom # shape[1]/2 is the position of the centerline
+    worm_frame_y = worm_image_shape[1]/2 + side*distances*zoom # worm_image_shape[1]/2 is the position of the centerline
     return numpy.transpose([worm_frame_x, worm_frame_y])
+
+def standardize_coordinates(coordinates, x_max, standard_length, width_tck=None, standard_width=None):
+    """Convert worm frame coordinates to the frame of a standardized worm.
+
+    Convert a list of (x, y) coordinates in a worm's reference frame to that of
+    a "standard" worm (defined by a standard length and optionally width_tck).
+
+    Note that the y-coordinates are relative to the centerline, not the top-left
+    of the image.
+
+    Parameters:
+        coordinates: shape (num_coords, 2) list of coordinates. Pixel centers are
+            assumed to be at (0.5, 0.5) increments, so (0, 0) refers to the top-
+            left corner of the top-left pixel, and (w, h) refers to the bottom-
+            right corner of the bottom-right pixel in an image of shape (w, h).
+            NB: the y-coordinate values MUST BE in terms of the worm's centerline.
+            To convert to image coordinates for a given image (either the
+            original or standardized image): y += image.shape[1] / 2
+        x_max: maximum x-value for the coordinates. If the warped worm image
+            from which the coordinates were obtained is available, use
+            worm_frame_image.shape[0]. Otherwise, use
+            round(zplib.curve.spline_geometry.arc_length(center_tck)).
+        standard_length: width of the "standard worm" image.
+        width_tck: If standard_width is specified, a width_tck must also be
+            specified to define the transform from this worm's width profile to
+            the standardized width profile.
+        standard_width: a width spline specifying the "standardized" width
+            profile for the output image. If specified, the actual width profile
+            must also be provided as width_tck.
+    """
+    x_coords, y_coords = numpy.array(coordinates).T
+    rel_x = x_coords / x_max
+    x_coords = rel_x * standard_length
+    if standard_width is not None:
+        assert width_tck is not None
+        src_widths = interpolate.spline_evaluate(width_tck, rel_x)
+        dst_widths = interpolate.spline_evaluate(standard_width, rel_x)
+        y_coords *= dst_widths / src_widths
+    return numpy.transpose([x_coords, y_coords])
 
 def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
         standard_width=None, zoom=1, order=3, dtype=None, cval=0, **kwargs):
@@ -364,7 +421,9 @@ def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
             profile used to generate the worm-frame image(s), if any.
         zoom: zoom factor used to generate the worm-frame image(s).
         order: image interpolation order (0 = nearest neighbor, 1 = linear,
-            3 = cubic). Cubic is best, but slowest.
+            3 = cubic). Cubic is best for microscopy images (but slowest). For
+            boolean masks, linear interpolation with order=1 is best, and for
+            label images with discrete label values, use order=0.
         dtype: if None, use dtype of input images for output. Otherwise, use
             the specified dtype.
         cval: value with which the lab-frame image will be filled outside of the
@@ -387,7 +446,8 @@ def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
         assert image.shape == worm_image_shape
 
     mask = lab_frame_mask(center_tck, width_tck, lab_image_shape) > 0
-    mask_coords = numpy.transpose(mask.nonzero()) # shape (m, 2) where m is number of in-mask pixels
+    # for below, add (0.5, 0.5) to get positions of pixel *centers* in mask.
+    mask_coords = numpy.transpose(mask.nonzero()) + [0.5, 0.5] # shape (m, 2) where m is number of in-mask pixels
     sample_coordinates = coordinates_to_worm_frame(mask_coords, worm_image_shape,
         center_tck, width_tck, standard_width, zoom).T
 
@@ -395,7 +455,12 @@ def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
     for image in images:
         lab_frame_image = numpy.empty(lab_image_shape, dtype=image.dtype if dtype is None else dtype)
         lab_frame_image.fill(cval)
-        lab_frame_image[mask] = ndimage.map_coordinates(image, sample_coordinates,
+        # subtract (0.5, 0.5) from final coords for map_coordinates to work right.
+        # NB: need to do coordinates_to_worm_frame math above in terms of pixel centers for
+        # this all to come out right, even if we subtract half off again at the end.
+        # This is because the splines are defined such that pixel centers are at (0.5, 0.5)
+        # increments.
+        lab_frame_image[mask] = ndimage.map_coordinates(image, sample_coordinates-_HALF_PX_OFFSET,
             order=order, cval=cval, output=dtype, **kwargs)
         lab_frame.append(lab_frame_image)
     if unpack_list:
