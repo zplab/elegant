@@ -1117,9 +1117,10 @@ class Worms(collections.UserList):
         worm_data = numpy.split(output, numpy.cumsum(lengths)[:-1])
         worm_ages = [d[:, 0] for d in data]
         for worm, ages, data in zip(self, worm_ages, worm_data):
-            vals = numpy.empty_like(worm.td.age)
+            worm_ages = age_feature(worm) if callable(age_feature) else getattr(worm.td, age_feature)
+            vals = numpy.empty(worm_ages, dtype=float)
             vals.fill(numpy.nan)
-            age_mask = numpy.in1d(worm.td.age, ages, assume_unique=True)
+            age_mask = numpy.in1d(worm_ages, ages, assume_unique=True)
             vals[age_mask] = data
             setattr(worm.td, feature_out, vals)
         return trend_x, mean_trend, std_trend
