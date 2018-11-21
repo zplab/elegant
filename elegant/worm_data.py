@@ -1134,6 +1134,7 @@ class Worms(collections.UserList):
         groups = worms.group_by(keys)
         groups['good'] # list containing worms 0, 2, and 3
         """
+        keys = list(keys)
         assert len(keys) == len(self)
         worms = collections.defaultdict(self.__class__)
         for worm, key in zip(self, keys):

@@ -71,7 +71,14 @@ def annotate_timestamps(experiment_root, position, timepoint, metadata, annotati
     annotations['timestamp'] = metadata['timestamp']
 
 def annotate_z(experiment_root, position, timepoint, metadata, annotations):
-    annotations['stage_z'] = metadata.get('fine_z', numpy.nan)
+    # try to get "stage_z" metadata value, which was introduced in slightly newer code
+    # and is present at every timepoint
+    z = metadata.get('stage_z')
+    if z is None:
+        # if not present, fall back to "fine_z" value, which is present only when
+        # autofocus is run.
+        z =  metadata.get('fine_z', numpy.nan)
+    annotations['stage_z'] = z
 
 def annotate_stage_pos(experiment_root, position, metadata, annotations):
     x, y, z = metadata['positions'][position]
