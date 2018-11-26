@@ -11,7 +11,7 @@ from ris_widget.overlay import base
 from .. import load_data
 
 class ExperimentAnnotator:
-    def __init__(self, ris_widget, experiment_name, positions, annotation_fields, start_position=None, readonly=False):
+    def __init__(self, ris_widget, experiment_name, positions, annotation_fields, start_position=None, readonly=False, annotation_subdir='annotations'):
         """Set up a GUI for annotating an entire experiment.
 
         Annotations for each experiment position (i.e. each worm) are loaded
@@ -45,6 +45,7 @@ class ExperimentAnnotator:
         """
         self.ris_widget = ris_widget
         self.readonly = readonly
+        self.annotation_subdir = annotation_subdir
         ris_widget.add_annotator(annotation_fields)
         self.annotation_fields = annotation_fields
         self._init_positions(positions)
@@ -194,7 +195,7 @@ class ExperimentAnnotator:
 
     @property
     def annotation_file(self):
-        return self.experiment_root / 'annotations' / (self.position_name + '.pickle')
+        return self.experiment_root / self.annotation_subdir / (self.position_name + '.pickle')
 
     def load_annotations(self):
         try:
