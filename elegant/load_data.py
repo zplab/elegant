@@ -222,11 +222,11 @@ def read_annotation_file(annotation_file):
     timepoint_annotations = collections.OrderedDict(sorted(timepoint_annotations.items()))
     return position_annotations, timepoint_annotations
 
-def write_annotations(experiment_root, positions):
+def write_annotations(experiment_root, positions, annotation_subdir='annotations'):
     """Converse of read_annotations(): write a set of annotation files back,
     from a positions dictionary like that returned by read_annotations().
     """
-    annotation_dir = pathlib.Path(experiment_root) / 'annotations'
+    annotation_dir = pathlib.Path(experiment_root) / annotation_subdir
     for position_name, (position_annotations, timepoint_annotations) in positions.items():
         annotation_file = annotation_dir / f'{position_name}.pickle'
         write_annotation_file(annotation_file, position_annotations, timepoint_annotations)
