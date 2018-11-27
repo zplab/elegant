@@ -126,7 +126,7 @@ def _get_splines(centerline, widths):
     width_tck = interpolate.fit_nonparametric_spline(x, new_widths, smoothing=0.2*len(centerline))
     return center_tck, width_tck
 
-_HALF_PX_OFFSET = numpy.array([0.5, 0.5])[:, numpy.newaxis, numpy.newaxis]
+_HALF_PX_OFFSET = numpy.array([0.5, 0.5])
 
 def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_distance=None,
         standard_length=None, standard_width=None, zoom=1, order=3, dtype=None, **kwargs):
@@ -226,7 +226,7 @@ def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_di
             images = [images]
     # subtract half-pixel offset because map_coordinates treats (0,0) as the middle
     # of the top-left pixel, not the far corner of that pixel.
-    worm_frame = [ndimage.map_coordinates(image, sample_coordinates - _HALF_PX_OFFSET,
+    worm_frame = [ndimage.map_coordinates(image, sample_coordinates - _HALF_PX_OFFSET.reshape(2, 1, 1),
         order=order, output=dtype, **kwargs) for image in images]
     if unpack_list:
         worm_frame = worm_frame[0]
@@ -460,7 +460,7 @@ def to_lab_frame(images, lab_image_shape, center_tck, width_tck,
         # this all to come out right, even if we subtract half off again at the end.
         # This is because the splines are defined such that pixel centers are at (0.5, 0.5)
         # increments.
-        lab_frame_image[mask] = ndimage.map_coordinates(image, sample_coordinates-_HALF_PX_OFFSET,
+        lab_frame_image[mask] = ndimage.map_coordinates(image, sample_coordinates-_HALF_PX_OFFSET.reshape(2, 1),
             order=order, cval=cval, output=dtype, **kwargs)
         lab_frame.append(lab_frame_image)
     if unpack_list:
