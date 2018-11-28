@@ -173,11 +173,11 @@ def write_metadata(metadata, experiment_root):
     metadata_file = pathlib.Path(experiment_root) / 'experiment_metadata.json'
     datafile.json_encode_atomic_legible_to_file(metadata, metadata_file)
 
-def read_annotations(experiment_root, annotation_subdir='annotations'):
+def read_annotations(experiment_root, annotation_dir='annotations'):
     """Read annotation data from an experiment directory.
     Parameters:
         experiment_root: the path to an experimental directory.
-        annotation_subdir: subdirectory under experient_root containing
+        annotation_dir: subdirectory under experient_root containing
             annotations of interest (pathlib.Path or string)
     Returns: an ordered dictionary mapping position names to annotations,
         where each annotation is a (position_annotations, timepoint_annotations)
@@ -191,11 +191,11 @@ def read_annotations(experiment_root, annotation_subdir='annotations'):
         life_stage = timepoint_annotations['2017-04-23t0122']['stage']
     """
     experiment_root = pathlib.Path(experiment_root)
-    annotation_root = experiment_root / annotation_subdir
+    annotation_root = experiment_root / annotation_dir
     positions = collections.OrderedDict()
     for annotation_file in sorted(annotation_root.glob('*.pickle')):
         worm_name = annotation_file.stem
-        positions[worm_name] = load_data.read_annotation_file(annotation_file)
+        positions[worm_name] = read_annotation_file(annotation_file)
     return positions
 
 def read_annotation_file(annotation_file):
@@ -222,13 +222,13 @@ def read_annotation_file(annotation_file):
     timepoint_annotations = collections.OrderedDict(sorted(timepoint_annotations.items()))
     return position_annotations, timepoint_annotations
 
-def write_annotations(experiment_root, positions, annotation_subdir='annotations'):
+def write_annotations(experiment_root, positions, annotation_dir='annotations'):
     """Converse of read_annotations(): write a set of annotation files back,
     from a positions dictionary like that returned by read_annotations().
     """
-    annotation_dir = pathlib.Path(experiment_root) / annotation_subdir
+    annotation_root = pathlib.Path(experiment_root) / annotation_dir
     for position_name, (position_annotations, timepoint_annotations) in positions.items():
-        annotation_file = annotation_dir / f'{position_name}.pickle'
+        annotation_file = annotation_root / f'{position_name}.pickle'
         write_annotation_file(annotation_file, position_annotations, timepoint_annotations)
 
 def write_annotation_file(annotation_file, position_annotations, timepoint_annotations):
