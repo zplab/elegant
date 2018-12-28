@@ -192,7 +192,7 @@ def find_lawn_in_image(image, optocoupler, return_model=False):
 
 def _get_pose(mask, timepoint_annotations, timepoint_name, width_estimator):
     center_tck, width_tck = worm_spline.pose_from_mask(mask)
-    if width_estimator is not None:
+    if width_estimator is not None and center_tck is not None:
         current_annotation = timepoint_annotations[timepoint_name]
         age = None
         if 'age' in current_annotation:
