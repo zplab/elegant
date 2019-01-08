@@ -61,12 +61,11 @@ def _get_centerline(mask):
     # so: structure1 requires a point in the middle of a 3x3 neighborhoood be True
     # and structure2 requires that it be an endpoint with exactly one axial neighbor
     structure1 = numpy.array([[0,0,0], [0,1,0], [0,0,0]])
-    structure2 = numpy.array([[1,0,1], [1,0,1], [1,1,1]])
-    # return the union of all places that structure2 matches, when rotated to all four orientations
+    structure2 = numpy.array([[0,0,1], [1,0,1], [1,1,1]])
+    # return the union of all places that structure2 matches, when rotated to all
+    # four orientations and then reflected/rotated as well.
     endpoints = _rotated_hit_or_miss(skeleton, structure1, structure2)
-    # now modify structure2 to signal when there is exactly one diagonal neighbor
-    structure2 = numpy.array([[0,1,1], [1,0,1], [1,1,1]])
-    endpoints |= _rotated_hit_or_miss(skeleton, structure1, structure2)
+    endpoints |= _rotated_hit_or_miss(skeleton, structure1, structure2.T)
     ep_indices = numpy.transpose(endpoints.nonzero())
 
     skeleton = skeleton.astype(float)
