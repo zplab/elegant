@@ -37,7 +37,7 @@ def pose_from_mask(mask, smoothing=2):
     sx, sy = slices[0]
     cropped = mask[sx, sy]
     centerline, widths = _get_centerline(cropped)
-    if centerline.size < 10:
+    if len(centerline) < 10:
         return None, None
     center_tck, width_tck = _get_splines(centerline, widths)
     # adjust x, y coords to account for the cropping
