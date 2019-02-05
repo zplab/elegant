@@ -55,6 +55,6 @@ Here is simple example for starting up an annotator with a few standard annotati
     pa = pose_annotation.PoseAnnotation.from_experiment_metadata(metadata, rw)
     st = stage_field.StageField()
     ta = timepoint_annotations.TimepointAnnotations()
-    ka = keypoint_annotation.KeypointAnnotation(rw.alt_view, ['pharynx'], center_y_origin=True, auto_advance=True)
+    ka = keypoint_annotation.KeypointAnnotation(rw, ['pharynx'], worm_frame=True, auto_advance=True)
     positions = load_data.scan_experiment_dir(exp_root)
     ea = experiment_annotator.ExperimentAnnotator(rw, exp_root, positions, [pa, st, ta, ka])

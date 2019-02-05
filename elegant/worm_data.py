@@ -1043,7 +1043,8 @@ class Worms(collections.UserList):
         """
         data = []
         for feature in features:
-            ages, feature_data = numpy.concatenate(self.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid=False)).T
+            time_range = self.get_time_range(feature, min_age, max_age, age_feature, match_closest, filter_valid=False)
+            ages, feature_data = numpy.concatenate(time_range).T
             data.append(feature_data)
         data = numpy.transpose(data) # shape (n_timepoints, n_features)
         if filter_valid:
@@ -1276,7 +1277,8 @@ class Worms(collections.UserList):
         return out
 
     def plot_timecourse(self, feature, min_age=-numpy.inf, max_age=numpy.inf,
-        age_feature='age', time_units='hours', color_by='lifespan'):
+        age_feature='age', time_units='hours', color_by='lifespan', clear=True,
+        **plot_kws):
         """Plot values of a given feature for each worm, colored by a given
         worm feature (defaults to lifespan).
 
@@ -1298,14 +1300,18 @@ class Worms(collections.UserList):
             time_units: one of "days", "hours", "minutes", or "seconds",
                 representing the units in which the time scale should be plotted.
             color_by: worm feature to use for color scale of each timecourse.
+            clear: if True (default), clear the current figure before plotting.
+            **plot_kws: all other keywords will be passed to the matplotlib plot
+                function.
         """
         import matplotlib.pyplot as plt
         if time_units not in TIME_UNITS:
             raise ValueError(f"'time_units' must be one of: {list(TIME_UNITS)}")
         time_scale = TIME_UNITS[time_units]
-        plt.clf()
+        if clear:
+            plt.clf()
         for x, y, c in self._timecourse_plot_data(feature, min_age, max_age, age_feature, color_by):
-            plt.plot(x/time_scale, y, color=c)
+            plt.plot(x/time_scale, y, color=c, **plot_kws)
 
 class _TimecourseData(object):
     def __repr__(self):

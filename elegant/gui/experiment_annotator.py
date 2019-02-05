@@ -41,7 +41,7 @@ class ExperimentAnnotator:
             start_position: name of starting position to load first (e.g. "009").
                 if none specified, load the first position. To change to an
                 arbitrary position mid-stream, call the load_position() method.
-            annotation_dir: str/pathlib.Path to the subdirectory from where to 
+            annotation_dir: str/pathlib.Path to the subdirectory from where to
                 load/save annotaions.
 
         """
