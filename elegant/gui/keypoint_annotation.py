@@ -27,7 +27,7 @@ class KeypointAnnotation(annotator.AnnotationField):
         pen = Qt.QPen(Qt.QColor(255, 255, 255, 84))
         pen.setWidth(3)
         pen.setCosmetic(True)
-        self.point_set = identified_point_set.IdentifiedPointSet(ris_widget, num_points, qcolors, pen)
+        self.point_set = identified_point_set.IdentifiedPointSet(self.ris_widget, num_points, qcolors, pen)
         self.point_set.geometry_change_callbacks.append(self.on_geometry_change)
         self._auto_advance = auto_advance
         super().__init__(name, default={name: None for name in keypoint_names})
