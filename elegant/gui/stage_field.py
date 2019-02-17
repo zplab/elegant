@@ -25,13 +25,11 @@ class StageField(annotator.AnnotationField):
             shortcuts: shortcut keys to select the different stages; if not
                 specified, the first letter of each stage will be used.
         """
-        assert len(transitions) == len(stages) - 1
         self.stages = stages
         self.stage_indices = {stage: i for i, stage in enumerate(stages)}
-        self.transitions = transitions
         if shortcuts is None:
             # take the first letter of each as the shortcut
-            shortcuts = [transition[0] for transition in transitions]
+            shortcuts = [stage[0] for stage in stages]
         self.shortcuts = shortcuts
         self.colors = {stages[0]: self.FIRST_COLOR, stages[-1]: self.LAST_COLOR}
         self.colors.update(zip(stages[1:-1], self.COLOR_CYCLE))
@@ -39,19 +37,21 @@ class StageField(annotator.AnnotationField):
 
     def init_widget(self):
         self.widget = Qt.QGroupBox(self.name)
-        layout = Qt.QVBoxLayout()
+        layout = Qt.QHBoxLayout()
         self.widget.setLayout(layout)
-        self.label = Qt.QLabel()
-        layout.addWidget(self.label)
-        for stage, key in zip(self.transitions, self.shortcuts):
+        self.buttons = []
+        self.button_group = Qt.QButtonGroup()
+        for stage, key in zip(self.stages, self.shortcuts):
             button = Qt.QPushButton(stage)
+            self.buttons.append(button)
             button.setCheckable(True)
+            self.button_group.addButton(button)
             callback = self._make_stage_callback(button, stage)
             button.clicked.connect(callback)
             layout.addWidget(button)
             Qt.QShortcut(key, self.widget, callback, context=Qt.Qt.ApplicationShortcut)
 
-    def _make_transition_callback(self, button, stage):
+    def _make_stage_callback(self, button, stage):
         def callback():
             self.set_stage(stage)
         return callback
@@ -60,27 +60,40 @@ class StageField(annotator.AnnotationField):
         self.update_annotation(stage)
         # now fix up pages before this page to comply with newly set stage
         fb_i = self.flipbook.pages.index(self.page)
-        youngest_stage_i = self.stage_indices[stage] - 1
-        # we can never manually set the first stage, so youngest_stage_i is always >= 0
-        if fb_i > 0:    # Exclude update of previous pages if this is the first image
+        youngest_stage_i = self.stage_indices[stage]
+        if fb_i > 0: # Exclude update of previous pages if this is the first image
             for page in self.flipbook.pages[fb_i-1::-1]:
                 page_stage = self.get_annotation(page)
-                page_stage_i = self.stage_indices.get(page_stage, len(self.stages)) # will be > all others if stage is None
-                if page_stage_i < youngest_stage_i:
-                    youngest_stage_i = page_stage_i
+                if page_stage is None:
+                    # if previous page has no annotation, use the annotation BEFORE
+                    # the one clicked (if possible)
+                    page.annotations[self.name] = self.stages[max(0, youngest_stage_i-1)]
                 else:
-                    page.annotations[self.name] = self.stages[youngest_stage_i]
+                    page_stage_i = self.stage_indices[page_stage]
+                    if page_stage_i < youngest_stage_i:
+                        youngest_stage_i = page_stage_i
+                    else:
+                        page.annotations[self.name] = self.stages[youngest_stage_i]
 
         # pages after this will be brought into compliance by update_widget
         self.update_widget(stage)
 
     def update_widget(self, value):
         if value is None:
-            self.label.setText('')
+            # to deselect all buttons, need to make group temporarily non-exclusive
+            self.button_group.setExclusive(False)
+            for button in self.buttons:
+                button.setChecked(False)
+            self.button_group.setExclusive(True)
         elif value not in self.stages:
             raise ValueError(f'Value {value} not in list of stages.')
         else:
-            self.label.setText(value)
+            self.buttons[self.stage_indices[value]].setChecked(True)
+        # TODO: why do we need to manually call repaint() after setting the checked property here?
+        # TODO: also, calling update() instead of repaint() can cause other parts of a floated widget
+        # to get corrupt. WTF?
+        for button in self.buttons:
+            button.repaint()
 
         # now ensure that all pages follow correct stage ordering, and set
         # the page colors
