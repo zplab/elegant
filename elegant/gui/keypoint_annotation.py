@@ -87,7 +87,7 @@ class KeypointAnnotation(annotator.AnnotationField):
         if named_points is None:
             named_points = {name: None for name in self.keypoint_names}
         for label, (r, g, b), name in zip(self.labels, self.colors, self.keypoint_names):
-            point = named_points[name]
+            point = named_points.get(name)
             if point is None:
                 style = 'color: gray'
             else:

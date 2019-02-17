@@ -91,7 +91,7 @@ def annotate_stage_pos(experiment_root, position, metadata, position_annotations
 
 def propagate_worm_stage(experiment_root, position, metadata, position_annotations, timepoint_annotations):
     latest_stage = None
-    for annotations in timepoint_annotations:
+    for timepoint, annotations in timepoint_annotations.items():
         annotated_stage = annotations.get('stage')
         if annotated_stage is not None:
             latest_stage = annotated_stage
