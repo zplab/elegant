@@ -5,6 +5,7 @@ import multiprocessing
 import json
 import numpy
 import datetime
+import collections
 
 from zplib.curve import spline_geometry
 import freeimage
@@ -23,7 +24,8 @@ def update_annotations(experiment_root):
     update the annotations dictionaries with all relevant data that can be
     automatically extracted from the experiment acquisition metadata files.
     """
-    annotate(experiment_root, [annotate_timestamps, annotate_z], [annotate_stage_pos])
+    annotate(experiment_root, annotators=(annotate_timestamps, annotate_z),
+        position_annotators=(annotate_stage_pos, propagate_worm_stage))
 
 def annotate(experiment_root, annotators=[], position_annotators=[]):
     """Apply one or more measurement functions to produce annotations for manual review.
@@ -46,8 +48,9 @@ def annotate(experiment_root, annotators=[], position_annotators=[]):
                 experiment_root: as above
                 position: name of position
                 metadata: metadata dict from 'experiment_metadata.json'
-                annotations: annotation dictionary for the position
-
+                position_annotations: annotation dictionary for the position
+                timepoint_annotations: annotation dictionary for the timepoints
+                    at that position.
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = load_data.read_annotations(experiment_root)
@@ -57,14 +60,14 @@ def annotate(experiment_root, annotators=[], position_annotators=[]):
         with metadata_path.open('r') as f:
             position_metadata = json.load(f)
         position = metadata_path.parent.name
-        position_annotations, timepoint_annotations = positions.setdefault(position, ({}, {}))
-        for annotator in position_annotators:
-            annotator(experiment_root, position, experiment_metadata, position_annotations)
+        position_annotations, timepoint_annotations = positions.setdefault(position, ({}, collections.OrderedDict()))
         for metadata in position_metadata:
             timepoint = metadata['timepoint']
             annotations = timepoint_annotations.setdefault(timepoint, {})
             for annotator in annotators:
                 annotator(experiment_root, position, timepoint, metadata, annotations)
+        for annotator in position_annotators:
+            annotator(experiment_root, position, experiment_metadata, position_annotations, timepoint_annotations)
     load_data.write_annotations(experiment_root, positions)
 
 def annotate_timestamps(experiment_root, position, timepoint, metadata, annotations):
@@ -77,14 +80,23 @@ def annotate_z(experiment_root, position, timepoint, metadata, annotations):
     if z is None:
         # if not present, fall back to "fine_z" value, which is present only when
         # autofocus is run.
-        z =  metadata.get('fine_z', numpy.nan)
+        z = metadata.get('fine_z', numpy.nan)
     annotations['stage_z'] = z
 
-def annotate_stage_pos(experiment_root, position, metadata, annotations):
+def annotate_stage_pos(experiment_root, position, metadata, position_annotations, timepoint_annotations):
     x, y, z = metadata['positions'][position]
-    annotations['stage_x'] = x
-    annotations['stage_y'] = y
-    annotations['starting_stage_z'] = z
+    position_annotations['stage_x'] = x
+    position_annotations['stage_y'] = y
+    position_annotations['starting_stage_z'] = z
+
+def propagate_worm_stage(experiment_root, position, metadata, position_annotations, timepoint_annotations):
+    latest_stage = None
+    for annotations in timepoint_annotations:
+        annotated_stage = annotations.get('stage')
+        if annotated_stage is not None:
+            latest_stage = annotated_stage
+        elif latest_stage is not None:
+            annotations['stage'] = latest_stage
 
 def annotate_lawn(experiment_root, position, metadata, annotations, num_images_for_lawn=3):
     """Position annotator used to find the lawn and associated metadata about it"""
@@ -235,9 +247,17 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
     adult_gfp = FluorMeasurements('gfp')
     measure_worms(experiment_root, adult_timepoints, [adult_gfp], 'gfp_measures')
     """
-    if n_jobs > 1:
-        _multiprocess_measure(experiment_root, positions, measures, measurement_name, n_jobs)
-        return
+    update_annotations(experiment_root)
+    if n_jobs == 1:
+        _measure(experiment_root, positions, measures, measurement_name)
+    else:
+        job_position_names = numpy.array_split(list(positions.keys()), n_jobs)
+        job_positions = [{name: positions[name] for name in names} for names in job_position_names]
+        job_args = [(experiment_root, job_pos, measures, measurement_name) for job_pos in job_positions]
+        with multiprocessing.Pool(processes=n_jobs) as pool:
+            pool.starmap(_measure, job_args)
+
+def _measure(experiment_root, positions, measures, measurement_name):
     experiment_root = pathlib.Path(experiment_root)
     feature_names = ['timepoint']
     for measure in measures:
@@ -269,13 +289,6 @@ def measure_worms(experiment_root, positions, measures, measurement_name, n_jobs
         for position_name, timepoint_data in data:
             worms.append(worm_data.Worm(position_name, feature_names, timepoint_data))
         worms.write_timecourse_data(data_root, multi_worm_file=False)
-
-def _multiprocess_measure(experiment_root, positions, measures, measurement_name, n_jobs):
-    job_position_names = numpy.array_split(list(positions.keys()), n_jobs)
-    job_positions = [{name: positions[name] for name in names} for names in job_position_names]
-    job_args = [(experiment_root, job_pos, measures, measurement_name) for job_pos in job_positions]
-    with multiprocessing.Pool(processes=n_jobs) as pool:
-        pool.starmap(measure_worms, job_args)
 
 def collate_data(experiment_root, position_features=('stage_x', 'stage_y', 'starting_stage_z')):
     """Gather all .tsv files produced by measurement runs into a single file.

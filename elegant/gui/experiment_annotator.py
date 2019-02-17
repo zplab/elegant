@@ -9,6 +9,7 @@ from ris_widget import shared_resources
 from ris_widget.overlay import base
 
 from .. import load_data
+from .. import process_data
 
 class ExperimentAnnotator:
     def __init__(self, ris_widget, experiment_name, positions, annotation_fields, start_position=None, readonly=False, annotation_dir='annotations'):
@@ -119,6 +120,10 @@ class ExperimentAnnotator:
         # this function allows subclasses to re-interpret the positions parameter
         self.position_names = list(positions.keys())
         self.positions = list(positions.values())
+        if not self.readonly:
+            self.timepoints = self.positions[0] # required for experiment_root property to work
+            # update the annotations file
+            process_data.update_annotations(self.experiment_root)
 
     def _add_button(self, layout, title, callback):
         button = Qt.QPushButton(title)

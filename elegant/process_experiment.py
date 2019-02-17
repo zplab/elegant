@@ -13,6 +13,7 @@ from zplib.image import threaded_io
 from . import load_data
 from . import segment_images
 from . import worm_widths
+from . import process_data
 
 def compress_pngs(experiment_root, timepoints=None,
     level=freeimage.IO_FLAGS.PNG_Z_DEFAULT_COMPRESSION, num_threads=4):
@@ -64,7 +65,7 @@ def compress_main(argv=None):
     compress_pngs(**args.__dict__)
 
 def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, overwrite_existing=False):
-    """Segment all 'bf' image files from an experiment directory and annotate poses.
+    """Segment all image files from an experiment directory.
 
     For more complex needs, use segment_images.segment_positions. This function
     is largely a simple example of its usage.
@@ -77,21 +78,13 @@ def segment_experiment(experiment_root, model, channels='bf', use_gpu=True, over
         channels: list/tuple of image channels to segment, or a single channel
             as a string.
         use_gpu: whether or not to use the GPU to perform the segmentations
-        overwrite_existing: if False, the segmenter will not be run on existing
-            mask files, nor will existing annotations be modified even if new
-            mask files are generated for a timepoint.
+        overwrite_existing: if False, the segmenter will not be run where mask
+            mask files exist.
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
     mask_root = experiment_root / 'derived_data' / 'mask'
     segment_images.segment_positions(positions, model, mask_root, use_gpu, overwrite_existing)
-    annotations = load_data.read_annotations(experiment_root)
-    metadata = load_data.read_metadata(experiment_root)
-    age_factor = metadata.get('age_factor', 1) # see if there is an "age factor" stashed in the metadata...
-    width_estimator = worm_widths.WidthEstimator.from_experiment_metadata(metadata, age_factor)
-    segment_images.annotate_poses_from_masks(positions, mask_root, annotations,
-        overwrite_existing, width_estimator)
-    load_data.write_annotations(experiment_root, annotations)
 
 class _ListAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -116,6 +109,41 @@ def segment_main(argv=None):
         help="disable GPU usage")
     parser.add_argument('--list-models', '-l', default=argparse.SUPPRESS, nargs=0,
         action=_ListAction, help="list available models")
+    args = parser.parse_args(argv)
+    segment_experiment(**args.__dict__)
+
+def annotate_poses(experiment_root, channels='bf', overwrite_existing=False):
+    """Annotate poses from all masks from an experiment directory.
+
+    For more complex needs, use segment_images.annotate_poses_from_masks. This
+    function is largely a simple example of its usage.
+
+    Parameters:
+        experiment_root: top-level experiment directory
+        channels: list/tuple of image channels to annotate poses from, or a
+            single channel as a string.
+        overwrite_existing: if False, existing annotations will not be modified.
+    """
+    experiment_root = pathlib.Path(experiment_root)
+    positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
+    mask_root = experiment_root / 'derived_data' / 'mask'
+    process_data.update_annotations(experiment_root)
+    annotations = load_data.read_annotations(experiment_root)
+    metadata = load_data.read_metadata(experiment_root)
+    age_factor = metadata.get('age_factor', 1) # see if there is an "age factor" stashed in the metadata...
+    width_estimator = worm_widths.WidthEstimator.from_experiment_metadata(metadata, age_factor)
+    segment_images.annotate_poses_from_masks(positions, mask_root, annotations,
+        overwrite_existing, width_estimator)
+    load_data.write_annotations(experiment_root, annotations)
+
+def annotate_main(argv=None):
+    parser = argparse.ArgumentParser(description="annotate poses from mask files")
+    parser.add_argument('experiment_root', help='the experiment to segment')
+    parser.add_argument('--channel', '-c', action='append', default=argparse.SUPPRESS,
+        dest='channels', metavar='CHANNEL',
+        help='image channel to segment; can be specified multiple times. If not specified, segment "bf" images only')
+    parser.add_argument('--overwrite', dest='overwrite_existing', action='store_true',
+        help="don't skip existing masks")
     args = parser.parse_args(argv)
     segment_experiment(**args.__dict__)
 

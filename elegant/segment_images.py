@@ -144,6 +144,20 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
                 current_annotation[annotation] = pose
             current_annotation[original_annotation] = pose
 
+def _get_pose(mask, timepoint_annotations, timepoint_name, width_estimator):
+    center_tck, width_tck = worm_spline.pose_from_mask(mask)
+    if width_estimator is not None and width_tck is not None:
+        current_annotation = timepoint_annotations[timepoint_name]
+        age = None
+        if 'age' in current_annotation:
+            age = current_annotation['age']
+        else:
+            first_annotation = timepoint_annotations[sorted(timepoint_annotations.keys())[0]]
+            if 'timestamp' in current_annotation and 'timestamp' in first_annotation:
+                age = (current_annotation['timestamp'] - first_annotation['timestamp']) / 3600 # age in hours
+        width_tck = width_estimator.pca_smooth_widths(width_tck, width_estimator.width_profile_for_age(age))
+    return center_tck, width_tck
+
 def find_lawn_from_images(images, optocoupler):
     """Find bacterial lawn from a set of images."""
     images = [process_images.pin_image_mode(image, optocoupler=optocoupler) for image in images]
@@ -189,17 +203,3 @@ def find_lawn_in_image(image, optocoupler, return_model=False):
         return lawn_mask, gmm
     else:
         return lawn_mask
-
-def _get_pose(mask, timepoint_annotations, timepoint_name, width_estimator):
-    center_tck, width_tck = worm_spline.pose_from_mask(mask)
-    if width_estimator is not None and width_tck is not None:
-        current_annotation = timepoint_annotations[timepoint_name]
-        age = None
-        if 'age' in current_annotation:
-            age = current_annotation['age']
-        else:
-            first_annotation = timepoint_annotations[sorted(timepoint_annotations.keys())[0]]
-            if 'timestamp' in current_annotation and 'timestamp' in first_annotation:
-                age = (current_annotation['timestamp'] - first_annotation['timestamp']) / 3600 # age in hours
-        width_tck = width_estimator.pca_smooth_widths(width_tck, width_estimator.width_profile_for_age(age))
-    return center_tck, width_tck

@@ -11,6 +11,7 @@ setuptools.setup(
     entry_points = {
         'console_scripts': [
             'segment_experiment=elegant.process_experiment:segment_main',
+            'annotate_poses=elegant.process_experiment:annotate_main',
             'compress_experiment=elegant.process_experiment:compress_main',
             'update_experiment_metadata=elegant.process_experiment:update_metadata_main'
         ],
