@@ -20,6 +20,8 @@ class KeypointAnnotation(annotator.AnnotationField):
                 split_view.split_view(ris_widget)
             self.ris_widget = ris_widget.alt_view
             self.center_y_origin = True
+            # bounding rect change means that the image shape has changed in some way
+            self.ris_widget.image_scene.layer_stack_item.bounding_rect_changed.connect(self._new_image_shape)
         else:
             self.ris_widget = ris_widget
             self.center_y_origin = False
@@ -31,6 +33,13 @@ class KeypointAnnotation(annotator.AnnotationField):
         self.point_set.geometry_change_callbacks.append(self.on_geometry_change)
         self._auto_advance = auto_advance
         super().__init__(name, default={name: None for name in keypoint_names})
+
+    def _new_image_shape(self):
+        if self.page is None:
+            named_points = None
+        else:
+            named_points = self.page.annotations.get(self.name)
+        self.update_widget(named_points)
 
     def init_widget(self):
         self.widget = Qt.QGroupBox(self.name)
