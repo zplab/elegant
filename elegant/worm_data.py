@@ -364,17 +364,18 @@ class Worm(object):
         spans = transition_times[1:] - transition_times[:-1]
         for stage, span in zip(stages[:-1], spans):
             setattr(self, f'{stage}span', span)
-        if stages[-1] != 'dead':
-            raise ValueError('No timepoint with "dead" label is present; cannot calculate lifespan.')
-        death_time = transition_times[-1]
-        self.td.ghost_age = hours - death_time
-        self.lifespan = death_time - hatch_time
         try:
             adult_i = list(stages).index('adult')
         except ValueError:
             raise ValueError('No timepoint with "adult" label is present; cannot calculate adult_age.')
         adult_time = transition_times[adult_i]
         self.td.adult_age = hours - adult_time
+        if stages[-1] != 'dead':
+            raise ValueError('No timepoint with "dead" label is present; cannot calculate lifespan.')
+        death_time = transition_times[-1]
+        self.td.ghost_age = hours - death_time
+        self.lifespan = death_time - hatch_time
+
 
     def __repr__(self):
         return f'Worm("{self.name}")'
