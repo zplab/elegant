@@ -44,7 +44,8 @@ class _VerboseCompressor(threaded_io.PNG_Compressor):
         self.n = len(image_paths)
         self.compressed = 0
         self.compressed_lock = threading.Lock()
-        self.wait_first_error(self.compress(image_paths))
+        self.compress(image_paths)
+        self.wait_first_error()
 
     def _compress(self, image_path):
         with self.compressed_lock:
