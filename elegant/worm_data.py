@@ -4,6 +4,7 @@ import numpy
 import glob
 import pathlib
 import collections
+import warnings
 
 from zplib.scalar_stats import moving_mean_std
 from zplib.scalar_stats import regress
@@ -366,13 +367,16 @@ class Worm(object):
             setattr(self, f'{stage}span', span)
         try:
             adult_i = list(stages).index('adult')
+            adult_time = transition_times[adult_i]
         except ValueError:
-            raise ValueError('No timepoint with "adult" label is present; cannot calculate adult_age.')
-        adult_time = transition_times[adult_i]
+            adult_time = numpy.nan
+            warnings.warn('No timepoint with "adult" label is present; cannot calculate adult_age.')
         self.td.adult_age = hours - adult_time
-        if stages[-1] != 'dead':
-            raise ValueError('No timepoint with "dead" label is present; cannot calculate lifespan.')
-        death_time = transition_times[-1]
+        if stages[-1] == 'dead':
+            death_time = transition_times[-1]
+        else:
+            warnings.warn('No timepoint with "dead" label is present; cannot calculate lifespan.')
+            death_time = numpy.nan
         self.td.ghost_age = hours - death_time
         self.lifespan = death_time - hatch_time
 
