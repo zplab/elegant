@@ -199,7 +199,7 @@ def purge_images_from_experiment(experiment_root):
     Parameters:
         experiment_root: str/pathlib.Path to experiment root
     '''
-    delete_confirmed = input(f'Removing all image files from {experiment_root}. Delete (y to confirm)? :')
+    delete_confirmed = input(f'Removing all image files from {experiment_root}. Press y and enter to confirm; press enter to abort:')
     if delete_confirmed != 'y':
         return
 
