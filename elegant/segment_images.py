@@ -131,6 +131,7 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
             err = f'No mask found for {position_name} {timepoint_name}'
             if skip_missing_masks:
                 warnings.warn(err)
+                continue
             else:
                 raise RuntimeError(err)
         position_annotations, timepoint_annotations = annotations.setdefault(position_name, ({}, {}))
