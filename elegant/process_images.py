@@ -38,7 +38,7 @@ def corrected_worm_frame_image(position_root, timepoint, image_type, center_tck,
         image = flatfield_correct(position_root, timepoint, image_type)
     return worm_spline.to_worm_frame(image, center_tck)
 
-def pin_image_mode(image, noise_floor=200, new_mode=24000,
+def pin_image_mode(image, noise_floor=100, new_mode=24000,
         mask=None, optocoupler=None, cx=0.5, cy=0.5):
     """Set an image's modal intensity to a specified value.
 

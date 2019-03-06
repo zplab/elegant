@@ -5,6 +5,7 @@ import os
 import pkg_resources
 import subprocess
 import tempfile
+import warnings
 
 import numpy
 from scipy import ndimage
@@ -97,7 +98,8 @@ def segment_positions(positions, model, mask_root, use_gpu=True, overwrite_exist
     process = segment_images(images_and_outputs, model, use_gpu)
     return process
 
-def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing=False, width_estimator=None):
+def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_existing=False,
+    width_estimator=None, skip_missing_masks=False):
     """Extract worm poses from mask files and add them to an annotation dictionary.
 
     Poses from brightfield-derived masks will be stored as the annotation "pose".
@@ -120,9 +122,17 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
             age is annotated for the worm at a given timepoint, an age will be
             estimated from the annotated timestamps using the assumption that
             the worm hatched at the first timepoint taken.
+        skip_missing_masks: if True, missing masks will be skipped (with a
+            warning emitted). If False, an error will be raised.
     """
     for position_name, timepoint_name, image_path in load_data.flatten_positions(positions):
         mask_path = mask_root / position_name / (image_path.stem + '.png')
+        if not mask_path.exists():
+            err = f'No mask found for {position_name} {timepoint_name}'
+            if skip_missing_masks:
+                warnings.warn(err)
+            else:
+                raise RuntimeError(err)
         position_annotations, timepoint_annotations = annotations.setdefault(position_name, ({}, {}))
         current_annotation = timepoint_annotations.setdefault(timepoint_name, {})
         image_type = mask_path.stem.split(' ', 1)[1]

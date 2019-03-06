@@ -113,7 +113,7 @@ def segment_main(argv=None):
     args = parser.parse_args(argv)
     segment_experiment(**args.__dict__)
 
-def annotate_poses(experiment_root, channels='bf', overwrite_existing=False):
+def annotate_poses(experiment_root, channels='bf', overwrite_existing=False, skip_missing_masks=True):
     """Annotate poses from all masks from an experiment directory.
 
     For more complex needs, use segment_images.annotate_poses_from_masks. This
@@ -124,6 +124,8 @@ def annotate_poses(experiment_root, channels='bf', overwrite_existing=False):
         channels: list/tuple of image channels to annotate poses from, or a
             single channel as a string.
         overwrite_existing: if False, existing annotations will not be modified.
+        skip_missing_masks: if True, missing masks will be skipped (with a
+            warning emitted). If False, an error will be raised.
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = load_data.scan_experiment_dir(experiment_root, channels=channels)
@@ -134,7 +136,7 @@ def annotate_poses(experiment_root, channels='bf', overwrite_existing=False):
     age_factor = metadata.get('age_factor', 1) # see if there is an "age factor" stashed in the metadata...
     width_estimator = worm_widths.WidthEstimator.from_experiment_metadata(metadata, age_factor)
     segment_images.annotate_poses_from_masks(positions, mask_root, annotations,
-        overwrite_existing, width_estimator)
+        overwrite_existing, width_estimator, skip_missing_masks)
     load_data.write_annotations(experiment_root, annotations)
 
 def annotate_main(argv=None):
@@ -144,7 +146,9 @@ def annotate_main(argv=None):
         dest='channels', metavar='CHANNEL',
         help='image channel to segment; can be specified multiple times. If not specified, segment "bf" images only')
     parser.add_argument('--overwrite', dest='overwrite_existing', action='store_true',
-        help="don't skip existing masks")
+        help="don't skip existing annotations")
+    parser.add_argument('--error-on-missing', dest='skip_missing_masks', action='store_false',
+        help="raise an error if some masks are not present")
     args = parser.parse_args(argv)
     segment_experiment(**args.__dict__)
 

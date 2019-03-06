@@ -334,7 +334,7 @@ def coordinates_to_worm_frame(coords, worm_image_shape, center_tck, width_tck=No
     kd = spatial.cKDTree(points)
     distances, indices = kd.query(coords)
     # indices is the index into the centerline points array of the closest centerline point
-    # for each nonzero mask pixel.
+    # for each coordinate.
     # distances is the distance from each nonzero mask pixel to that centerline point
     # worm_frame_x below will range from 0 to worm_image_shape[0], inclusive,
     # because worm_image_shape[0] is the coordinate of the right-most edge of the
