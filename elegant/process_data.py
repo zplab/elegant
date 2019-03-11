@@ -528,10 +528,12 @@ class LawnMeasurements:
         # Remove the animal from the lawn if possible.
         center_tck, width_tck = annotations.get('pose', (None, None))
         if center_tck is not None:
-            lawn_mask &= worm_spline.lab_frame_mask(center_tck, width_tck, timepoint_image.shape).astype('bool')
+            animal_mask = worm_spline.lab_frame_mask(center_tck, width_tck, timepoint_image.shape).astype('bool')
+        else:
+            animal_mask = numpy.zeros_like(lawn_mask).astype('bool') # Doesn't mask out anything
 
-        measures['summed_lawn_intensity'] = numpy.sum(rescaled_image[lawn_mask])
-        measures['median_lawn_intensity'] = numpy.median(rescaled_image[lawn_mask])
+        measures['summed_lawn_intensity'] = numpy.sum(rescaled_image[lawn_mask & ~animal_mask])
+        measures['median_lawn_intensity'] = numpy.median(rescaled_image[lawn_mask & ~animal_mask])
         measures['background_intensity'] = numpy.median(rescaled_image[~lawn_mask & vignette_mask])
 
         return [measures[feature_name] for feature_name in self.feature_names]
