@@ -187,3 +187,26 @@ def remove_dead_timepoints(experiment_root, postmortem_timepoints, dry_run=False
             timepoints_after_death = timepoint_num - death_timepoint_index # positive values for timepoints after death
             if timepoints_after_death > postmortem_timepoints:
                 remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=dry_run)
+
+def purge_images_from_experiment(experiment_root, dry_run=True):
+    '''Removes all image files from experiment directory
+
+    This function is intended to be run after an experiment directory has been backed up
+    (or possibly after an issue with the experiment makes the data non-usable).
+    The function will remove all image files from position directories, while leaving
+    position_metadata files intact.
+
+    Parameters:
+        experiment_root: str/pathlib.Path to experiment root
+        dry_run: bool flag that toggles taking action (if false, only sepcifies when offending files are found)
+    '''
+
+    experiment_root = pathlib.Path(experiment_root)
+    for position_root in [subdir for subdir in sorted(p.parent for p in experiment_root.glob('*/position_metaddata.json'))]:
+        for glob_str in ['*.png', '*.tiff']:
+            image_files_to_remove = list(position_root.glob(glob_str))
+            if image_files_to_remove:
+                print(f'Found {glob_str[1:]} files to remove for position {position_root.name}')
+                if not dry_run:
+                    for image_file in image_files_to_remove:
+                        image_file.unlink()
