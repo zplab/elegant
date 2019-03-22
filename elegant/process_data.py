@@ -543,7 +543,7 @@ class LawnMeasurements:
         if center_tck is not None:
             worm_mask = worm_spline.lab_frame_mask(center_tck, width_tck, timepoint_image.shape).astype('bool')
         else:
-            worm_mask = numpy.zeros_like(lawn_mask).astype('bool') # Doesn't mask out anything
+            worm_mask = False # No mask -- acts as though no pixels are worm pixels
 
         measures['summed_lawn_intensity'] = numpy.sum(rescaled_image[lawn_mask & ~worm_mask])
         measures['median_lawn_intensity'] = numpy.median(rescaled_image[lawn_mask & ~worm_mask])
