@@ -202,7 +202,7 @@ def purge_images_from_experiment(experiment_root, dry_run=True):
     '''
 
     experiment_root = pathlib.Path(experiment_root)
-    for position_root in [subdir for subdir in sorted(p.parent for p in experiment_root.glob('*/position_metaddata.json'))]:
+    for position_root in [subdir for subdir in sorted(p.parent for p in experiment_root.glob('*/position_metadata.json'))]:
         for glob_str in ['*.png', '*.tiff']:
             image_files_to_remove = list(position_root.glob(glob_str))
             if image_files_to_remove:
