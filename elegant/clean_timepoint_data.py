@@ -205,6 +205,9 @@ def purge_images_from_experiment(experiment_root, dry_run=True):
     for position_root in [subdir for subdir in sorted(p.parent for p in experiment_root.glob('*/position_metadata.json'))]:
         for glob_str in ['*.png', '*.tiff']:
             image_files_to_remove = list(position_root.glob(glob_str))
+            if (position_root / 'life_after_death').exists(): # For older WZ file organization where post-death images were seegragated
+                image_files_to_remove.extend((position_root / 'life_after_death').glob(glob_str))
+
             if image_files_to_remove:
                 print(f'Found {glob_str[1:]} files to remove for position {position_root.name}')
                 if not dry_run:
