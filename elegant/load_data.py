@@ -7,7 +7,8 @@ import json
 
 from zplib import datafile
 
-def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, image_ext='png'):
+def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None,
+    image_ext='png', error_on_missing=True):
     """Read files from a 'worm corral' experiment for further processing or analysis.
 
     Directory structure is assumed to be an experimental directory, with one or
@@ -47,6 +48,9 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
             If no timepoints pass the filter for a given position, then that
             position will not be present in the returned dictionary.
         image_ext: the image filename extension.
+        error_on_missing: if True (default), an error will be raised if
+            timepointsare found that do not have all the requested channels. If
+            False, these timepoints will simply be skipped.
 
     Returns: an ordered dictionary mapping position names to position dicts,
         where each position dict is another ordered dictionary mapping timepoint
@@ -85,13 +89,16 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None, i
             if timepoint_filter is None or timepoint_filter(position_name, timepoint_name):
                 if channels is None:
                     channel_images = [image_path for channel, image_path in sorted(timepoint_images.items())]
+                    assert len(channel_images) != 0 # should be no timepoints with no images from scan_all_images()
                 else:
-                    if not set(timepoint_images).issuperset(channels):
-                        missing = set(channels).difference(timepoint_images)
-                        raise RuntimeError(f'Not all requested channels present for {position_name}/{timepoint_name}. Missing: {missing}')
-                    channel_images = [timepoint_images[channel] for channel in channels]
-                if len(channel_images) > 0:
-                    filtered_timepoints[timepoint_name] = channel_images
+                    channel_images = [timepoint_images[channel] for channel in channels if channel in timepoint_images]
+                    if len(channel_images) < len(channels):
+                        if error_on_missing:
+                            missing = set(channels).difference(timepoint_images)
+                            raise RuntimeError(f'Not all requested channels present for {position_name}/{timepoint_name}. Missing: {missing}')
+                        else:
+                            continue
+                filtered_timepoints[timepoint_name] = channel_images
         if len(filtered_timepoints) > 0:
             filtered_positions[position_name] = filtered_timepoints
     return filtered_positions
