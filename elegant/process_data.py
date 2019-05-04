@@ -147,7 +147,7 @@ def annotate_ages_from_timestamps_and_stages(experiment_root, stage_annotation='
 def _update_ages(timepoint_annotations, position_annotations, stage_annotation='stage', unhatched_stage='egg', force=False):
     hatch_timestamp = position_annotations.get('hatch_timestamp')
     if hatch_timestamp is None:
-        for annotations in timepoint_annotations:
+        for annotations in timepoint_annotations.values():
             if 'timestamp' not in annotations:
                 return
             timestamp = annotations['timestamp']
@@ -161,7 +161,7 @@ def _update_ages(timepoint_annotations, position_annotations, stage_annotation='
             return
         else:
             position_annotations['hatch_timestamp'] = hatch_timestamp
-    for annotations in timepoint_annotations:
+    for annotations in timepoint_annotations.values():
         if 'age' in annotations and not force:
             continue
         timestamp = annotations.get('timestamp')
