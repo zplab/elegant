@@ -25,7 +25,12 @@ except ImportError:
     HAS_SEGMENTER = False
 
 
-MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime/v94'
+MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime_R2019a/v96'
+try:    # Patch until all machines are upgraded to latest driver set.
+    assert pathlib.Path(MATLAB_RUNTIME).exists()
+except AssertionError:
+    MATLAB_RUNTIME = '/usr/local/MATLAB/MATLAB_Runtime/v94'
+
 SEGMENT_EXECUTABLE = 'processImageBatch'
 
 def get_model_names():
