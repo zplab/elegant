@@ -161,7 +161,7 @@ def _update_ages(timepoint_annotations, position_annotations, stage_annotation='
             return
         else:
             position_annotations['hatch_timestamp'] = hatch_timestamp
-    for annotations in timepoint_annotations.values():
+    for annotations in timepoint_annotations:
         if 'age' in annotations and not force:
             continue
         timestamp = annotations.get('timestamp')
