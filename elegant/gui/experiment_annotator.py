@@ -67,6 +67,8 @@ class ExperimentAnnotator:
         self.position_i = None
         self.flipbook = ris_widget.flipbook
 
+        # add a listener to zoom the view when dragging with the control key held down
+        # (for graphics tablet cases with no mouse wheel to zoom)
         self.main_zoom = ZoomListener(ris_widget)
         if hasattr(ris_widget, 'alt_view'):
             self.alt_zoom = ZoomListener(ris_widget.alt_view)
