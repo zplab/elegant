@@ -6,7 +6,7 @@ import numpy
 from zplib.image import colorize
 from ris_widget.qwidgets import annotator
 from ris_widget.overlay import identified_point_set
-from ris_widget import split_view
+from . import split_view
 
 class KeypointAnnotation(annotator.AnnotationField):
     def __init__(self, ris_widget, keypoint_names, colors=None, name='keypoints', worm_frame=True, auto_advance=False):
@@ -16,9 +16,7 @@ class KeypointAnnotation(annotator.AnnotationField):
         self.colors = colors
         self.keypoint_names = keypoint_names
         if worm_frame:
-            if not hasattr(ris_widget, 'alt_view'):
-                split_view.split_view(ris_widget)
-            self.ris_widget = ris_widget.alt_view
+            self.ris_widget = split_view.split_ris_widget(ris_widget)
             self.center_y_origin = True
             # bounding rect change means that the image shape has changed in some way
             self.ris_widget.image_scene.layer_stack_item.bounding_rect_changed.connect(self._new_image_shape)
