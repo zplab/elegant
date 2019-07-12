@@ -74,35 +74,6 @@ class GeneralPoseAnnotator():
 
         self.ris_widget.annotator.update_fields()
 
-    def save_warped_images(self):
-        """Save the warped images into the same parent directory as the images in the flipbook.
-        If there is a width tck, the saved images have a transparent channel with the worm mask.
-        The warped images will be saved with the same base name as the first image in the flipbook_page list
-        with "-straight.png" afterwards.
-
-        Example:
-            image name: 'test.png'
-            straightened image name: 'test-straight.png'
-        """
-        for fp in self.ris_widget.flipbook_pages:
-            lab_frame_image = fp[0].data
-            annotations = getattr(fp, 'annotations', None)
-            if annotations is not None:
-                pose = annotations.get('pose')
-                if pose is not None and pose is not (None, None):
-                    center_tck, width_tck = pose
-                    if center_tck is not None:
-                        warp = worm_spline.to_worm_frame(lab_frame_image, center_tck, width_tck)
-                        if width_tck is not None:
-                            worm_frame_mask = worm_spline.worm_frame_mask(width_tck, warp.shape)
-                        else:
-                            image = numpy.dstack((warp, warp, warp))
-                        path = pathlib.Path(fp[0].name)
-                        save_path = path.stem+"-straight.png"
-                        freeimage.write(image, save_path)
-
-
-
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="zplab image viewer")
