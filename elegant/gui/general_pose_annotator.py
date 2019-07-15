@@ -3,27 +3,21 @@ import pathlib
 import pickle
 from PyQt5 import Qt
 import numpy
-from functools import partial
 
 from ris_widget import ris_widget
-from ris_widget import shared_resources
-
 from elegant.gui import pose_annotation
 from elegant import worm_widths
 from elegant import worm_spline
 
-from zplib.image import colorize
-
-class GeneralPoseAnnotator():
-    def __init__(self, rw):
+class GeneralPoseAnnotator:
+    def __init__(self, rw, pixels_per_micron=1/1.3):
         self.ris_widget = rw
-        width_estimator = worm_widths.WidthEstimator.from_default_widths(pixels_per_micron=1/1.3)
+        width_estimator = worm_widths.WidthEstimator.from_default_widths(pixels_per_micron=pixels_per_micron)
         self.pose_annotator = pose_annotation.PoseAnnotation(self.ris_widget, width_estimator=width_estimator)
         self.ris_widget.add_annotator([self.pose_annotator])
-
         
         load_data = Qt.QPushButton('Load')
-        load_data.clicked.connect(self.load_metadata)
+        load_data.clicked.connect(self.load_annotations)
         save_data = Qt.QPushButton('Save')
         save_data.clicked.connect(self.save_annotations)
         self.pose_annotator._add_row(self.pose_annotator.widget.layout(), Qt.QLabel('Data:'),load_data, save_data)
@@ -58,19 +52,22 @@ class GeneralPoseAnnotator():
                     with save_path.open('wb') as f:
                         pickle.dump(annotations, f)
 
-    def load_metadata(self):
+    def load_annotations(self):
         """Loads annotation metadata from a pickle file for each flipbook page.
-        NOTE: the metadata is only loaded if there is no current pose annotations.
+        NOTE: If there is already a pose annotation, the metadata will not be loaded.
         """
         for fp in self.ris_widget.flipbook_pages:
             annotations = getattr(fp, 'annotations', None)
-            if annotations is not None:    
+            pose = annotations.get('pose')
+            if pose in {None, (None, None)}:
                 path = pathlib.Path(fp[0].name)
                 
                 annotation_path = path.with_suffix('.pickle')
-                with annotation_path.open('rb') as f:
-                    annotations = pickle.load(f)
-                fp.annotations = annotations
+                #if there are no annotation pickle files do nothing
+                if annotation_path.exists():
+                    with annotation_path.open('rb') as f:
+                        annotations = pickle.load(f)
+                    fp.annotations = annotations
 
         self.ris_widget.annotator.update_fields()
 
