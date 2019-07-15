@@ -59,9 +59,8 @@ class GeneralPoseAnnotator:
         for fp in self.ris_widget.flipbook_pages:
             annotations = getattr(fp, 'annotations', None)
             pose = annotations.get('pose')
-            if pose in {None, (None, None)}:
+            if pose in (None, (None, None)):
                 path = pathlib.Path(fp[0].name)
-                
                 annotation_path = path.with_suffix('.pickle')
                 #if there are no annotation pickle files do nothing
                 if annotation_path.exists():
@@ -73,13 +72,15 @@ class GeneralPoseAnnotator:
 
 def main(argv=None):
     import argparse
+
     parser = argparse.ArgumentParser(description="zplab image viewer")
+    parser.add_argument('pixels_per_micron', nargs='?', default=1/1.3, type=float, metavar='pixels_per_micron', help='conversion factor for objective used')
     parser.add_argument('images', nargs="*", metavar='image', help='image files to open')
-    
+
     args = parser.parse_args(argv)
     
     rw = ris_widget.RisWidget()
-    gp = GeneralPoseAnnotator(rw)
+    gp = GeneralPoseAnnotator(rw, pixels_per_micron=args.pixels_per_micron)
      
     rw.add_image_files_to_flipbook(args.images)
     rw.run()
