@@ -57,7 +57,7 @@ class GeneralPoseAnnotator:
         NOTE: If there is already a pose annotation, the metadata will not be loaded.
         """
         for fp in self.ris_widget.flipbook_pages:
-            annotations = getattr(fp, 'annotations', None)
+            annotations = getattr(fp, 'annotations', {})
             pose = annotations.get('pose')
             if pose in (None, (None, None)):
                 path = pathlib.Path(fp[0].name)
