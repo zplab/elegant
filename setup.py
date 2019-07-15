@@ -13,7 +13,8 @@ setuptools.setup(
             'segment_experiment=elegant.process_experiment:segment_main',
             'annotate_poses=elegant.process_experiment:annotate_main',
             'compress_experiment=elegant.process_experiment:compress_main',
-            'update_experiment_metadata=elegant.process_experiment:update_metadata_main'
+            'update_experiment_metadata=elegant.process_experiment:update_metadata_main',
+            'general_pose_annotator=elegant.gui.general_pose_annotator:main'
         ],
     }
 )
