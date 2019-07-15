@@ -78,7 +78,7 @@ def main(argv=None):
     parser.add_argument('images', nargs="*", metavar='image', help='image files to open')
 
     args = parser.parse_args(argv)
-    
+    print(args)
     rw = ris_widget.RisWidget()
     gp = GeneralPoseAnnotator(rw, pixels_per_micron=args.pixels_per_micron)
      
