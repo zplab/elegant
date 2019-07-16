@@ -141,13 +141,14 @@ def annotate_ages_from_timestamps_and_stages(experiment_root, stage_annotation='
     """
     positions = load_data.read_annotations(experiment_root)
     for position_name, (position_annotations, timepoint_annotations) in positions.items():
-        _update_ages(timepoint_annotations, position_annotations, stage_annotation, unhatched_stage, force=True)
+        _update_ages(list(timepoint_annotations.values()), position_annotations, stage_annotation, unhatched_stage, force=True)
     load_data.write_annotations(experiment_root, positions)
 
 def _update_ages(timepoint_annotations, position_annotations, stage_annotation='stage', unhatched_stage='egg', force=False):
+    # NB: here we need timepoint_annotations to just be an ordered list of the values; we don't care about the names.
     hatch_timestamp = position_annotations.get('hatch_timestamp')
     if hatch_timestamp is None:
-        for annotations in timepoint_annotations.values():
+        for annotations in timepoint_annotations:
             if 'timestamp' not in annotations:
                 return
             timestamp = annotations['timestamp']
