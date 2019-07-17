@@ -7,19 +7,18 @@ from zplib.curve import spline_geometry
 
 from ris_widget import shared_resources
 from ris_widget import internal_util
-from ris_widget import split_view
 from ris_widget.overlay import base
 
 from . import center_spline
 from . import width_spline
+from .. import split_view
 from ... import worm_spline
 
 class SplineOutline(base.RWGeometryItemMixin, Qt.QGraphicsPathItem):
     QGRAPHICSITEM_TYPE = shared_resources.generate_unique_qgraphicsitem_type()
 
     def __init__(self, ris_widget, color=Qt.Qt.green):
-        if not hasattr(ris_widget, 'alt_view'):
-            split_view.split_view(ris_widget)
+        split_view.split_ris_widget(ris_widget)
         pen = Qt.QPen(color)
         pen.setWidth(2)
         self.center_spline = center_spline.CenterSpline(ris_widget, pen=pen)
