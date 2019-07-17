@@ -27,6 +27,9 @@ class GeneralPoseAnnotator:
         flipbook_page list as the base for the pickle file name.
         """
         for fp in self.ris_widget.flipbook_pages:
+            if len(fp) == 0:
+                # skip empty flipbook pages
+                continue
             annotations = getattr(fp, 'annotations', {})
             pose = annotations.get('pose', (None, None))
             if pose is not None:
