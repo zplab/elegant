@@ -10,6 +10,17 @@ from elegant import worm_spline
 
 class GeneralPoseAnnotator:
     def __init__(self, rw, pixels_per_micron=1/1.3):
+        """Set up a GUI for annotating poses in an environment that might be different from the one ZP Lab uses.
+
+        Annotations for each image in the flipbook are loaded an saved into a pickle file named based on the image's
+        name. Straight worm images are also saved out as png files. If widthes are specified png mask files representing the worm area are also 
+        saved out into the same directory as the images. Names for all files are based on the corresponding image's name.
+
+        Parameters:
+            rw: a RisWidget object
+            pixels_per_micron: conversion factor for objective used.
+            
+        """
         self.ris_widget = rw
         width_estimator = worm_widths.WidthEstimator.from_default_widths(pixels_per_micron=pixels_per_micron)
         self.pose_annotator = pose_annotation.PoseAnnotation(self.ris_widget, width_estimator=width_estimator)
@@ -80,7 +91,6 @@ def main(argv=None):
     parser.add_argument('images', nargs="*", metavar='image', help='image files to open')
 
     args = parser.parse_args(argv)
-
     rw = ris_widget.RisWidget()
     gp = GeneralPoseAnnotator(rw, pixels_per_micron=args.pixels_per_micron)
 
