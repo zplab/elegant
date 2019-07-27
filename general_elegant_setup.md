@@ -33,17 +33,11 @@ to know any of this.
   -**NOTE:** replace myenv to the environment name you want
   ```
   cat > user_env.yml << EOF
-  channels:
-      - defaults
-      - conda-forge
-
   dependencies:
       - ipython
       - numpy
       - scipy
-      - scikit-learn
       - pip:
-          - scikit-image
           - git+https://github.com/zplab/freeimage-py
           - git+https://github.com/zplab/zplib
           - git+https://github.com/zplab/RisWidget
