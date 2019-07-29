@@ -1220,7 +1220,9 @@ class Worms(collections.UserList):
     def regress(self, *features, target='lifespan', control_features=None, regressor=None):
         """Use zplib.scalar_stats.regress to determine relationship between features.
 
-        See zplib.scalar_stats.regress for more information.
+        See zplib.scalar_stats.regress for more information. For more complex needs,
+        use get_regression_data() to get the relevant parameters directly and pass
+        them to zplib.scalar_stats.regress.regress() or another regressor directly.
 
         Parameters:
             features: one or more features to retrieve to serve as indepdendent
