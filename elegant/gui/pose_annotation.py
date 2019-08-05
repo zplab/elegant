@@ -100,22 +100,23 @@ class PoseAnnotation(annotator.AnnotationField):
         self.auto_widths_button.clicked.connect(self.auto_widths)
         self._add_row(layout, Qt.QLabel('Auto:'), self.auto_center_button, self.auto_widths_button)
 
-        self.reverse_button = Qt.QPushButton('Reverse')
-        self.reverse_button.clicked.connect(self.outline.reverse_spline)
-        Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.outline.reverse_spline, context=Qt.Qt.ApplicationShortcut)
-
-        self.fine_mode = Qt.QCheckBox('Fine')
-        self.fine_mode.setChecked(False)
-        self.fine_mode.toggled.connect(self.outline.set_fine_warp)
-
         lock_warp = Qt.QCheckBox('Lock')
         lock_warp.setChecked(False)
         lock_warp.toggled.connect(self.set_locked)
-        self._add_row(layout, lock_warp, self.fine_mode, self.reverse_button)
+        self.fine_mode = Qt.QCheckBox('Fine')
+        self.fine_mode.setChecked(False)
+        self.fine_mode.toggled.connect(self.outline.set_fine_warp)
+        self.prev_button = Qt.QPushButton('Prev')
+        self.prev_button.clicked.connect(self.use_previous_spline)
+        Qt.QShortcut(Qt.Qt.Key_P, self.widget, self.use_previous_spline, context=Qt.Qt.ApplicationShortcut)
+        self.reverse_button = Qt.QPushButton('Reverse')
+        self.reverse_button.clicked.connect(self.outline.reverse_spline)
+        Qt.QShortcut(Qt.Qt.Key_R, self.widget, self.outline.reverse_spline, context=Qt.Qt.ApplicationShortcut)
+        self._add_row(layout, lock_warp, self.fine_mode, self.prev_button, self.reverse_button, spacing_factor=0.25)
 
-    def _add_row(self, layout, *widgets):
+    def _add_row(self, layout, *widgets, spacing_factor=1):
         hbox = Qt.QHBoxLayout()
-        hbox.setSpacing(self._hbox_spacing)
+        hbox.setSpacing(self._hbox_spacing*spacing_factor)
         layout.addLayout(hbox)
         for widget in widgets:
             sp = Qt.QSizePolicy(Qt.QSizePolicy.Ignored, Qt.QSizePolicy.Preferred)
@@ -171,9 +172,21 @@ class PoseAnnotation(annotator.AnnotationField):
         self.default_button.setEnabled(self.width_estimator is not None and has_center and unlocked)
         self.pca_button.setEnabled(self.width_estimator is not None and has_center_and_widths and unlocked)
         self.reverse_button.setEnabled(has_center and unlocked)
+        flip_idx = self.flipbook.current_page_idx if self.flipbook is not None else None
+        self.prev_button.setEnabled(flip_idx is not None and flip_idx > 0)
         self.auto_center_button.setEnabled(has_center and unlocked)
         self.auto_widths_button.setEnabled(has_center and unlocked)
         self.fine_mode.setEnabled(unlocked)
+
+    def use_previous_spline(self):
+        flip_idx = self.flipbook.current_page_idx if self.flipbook is not None else None
+        if flip_idx is None or flip_idx == 0:
+            return
+        prev_pose = self.flipbook.pages[flip_idx - 1].annotations.get(self.name)
+        if prev_pose is not None:
+            center_tck, width_tck = prev_pose
+            if center_tck is not None:
+                self._change_geometry(center_tck, width_tck)
 
     def set_locked(self, locked):
         self.outline.set_locked(locked)
