@@ -147,11 +147,11 @@ def annotate_poses_from_masks(positions, mask_root, annotations, overwrite_exist
         else:
             annotation = f'{image_type} pose'
         original_annotation = annotation + ' [original]'
-        center_tck, width_tck = annotations.get(annotation, (None, None))
+        center_tck, width_tck = current_annotation.get(annotation, (None, None))
         need_annotation = need_original = False
         if overwrite_existing or center_tck is None:
             need_annotation = True
-        elif original_annotation not in annotations:
+        if original_annotation not in current_annotation:
             need_original = True
         if need_original or need_annotation:
             mask = freeimage.read(mask_path) > 0
