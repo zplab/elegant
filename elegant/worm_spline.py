@@ -78,14 +78,14 @@ def _get_centerline(mask):
     for i, endpoint in enumerate(ep_indices[:-1]):
         remaining_indices = ep_indices[i+1:]
         costs = mcp.find_costs([endpoint], remaining_indices)[0]
-        path_lengths = costs[list(remaining_indices.T)]
+        path_lengths = costs[tuple(remaining_indices.T)]
         most_distant = remaining_indices[path_lengths.argmax()]
         traceback = mcp.traceback(most_distant)
         if len(traceback) > len(longest_traceback):
             longest_traceback = traceback
 
     centerline = numpy.asarray(longest_traceback)
-    widths = distances[list(centerline.T)]
+    widths = distances[tuple(centerline.T)]
     return centerline, widths
 
 def _rotated_hit_or_miss(mask, structure1, structure2):
@@ -345,6 +345,31 @@ def _worm_coords(shape, triangle_strip, x_max, right, left, reflect_centerline):
     vertex_vals[::2, 1] = left
     vertex_vals[1::2, 1] = right
     return draw.gouraud_triangle_strip(triangle_strip, vertex_vals, shape, background=numpy.nan)
+
+def abs_worm_coords_distance_from_edge(lab_image_shape, center_tck, width_tck):
+    """Produce a map of the pixel-wise worm coordinates in the lab frame.
+
+    Output x-coords run from 0 to the length of the worm, and y-coords are the
+    distance from the edge of the worm, rather than the distance from the
+    centerline, as in abs_worm_coords_in_lab_frame().
+
+    Areas outside of the worm will be nan.
+
+    Parameters:
+        lab_image_shape: shape of output image in lab frame
+        center_tck: centerline spline of the worm in the lab frame.
+        width_tck: spline width profile of the worm.
+    Returns: (x_coords, y_coords), each of shape lab_image_shape
+    """
+    left, center, right, widths = spline_geometry.centerline_and_outline(center_tck, width_tck)
+    num_points = len(left)
+    edge_vals = numpy.zeros((num_points, 2), dtype=numpy.float32)
+    center_vals = numpy.zeros((num_points, 2), dtype=numpy.float32)
+    x_max = spline_geometry.arc_length(center_tck)
+    edge_vals[:, 0] = center_vals[:, 0] = numpy.linspace(0, x_max, num_points)
+    center_vals[:, 1] = widths
+    return draw.gourad_centerline_strip(left, center, right, edge_vals, center_vals, edge_vals,
+        lab_image_shape, background=numpy.nan)
 
 def coordinates_to_lab_frame(coordinates, worm_image_shape, center_tck, width_tck=None,
         standard_width=None, zoom=1, reflect_centerline=False):
