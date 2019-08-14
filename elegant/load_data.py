@@ -120,7 +120,7 @@ def scan_all_images(experiment_root, image_ext='png'):
     for position_root in sorted(p.parent for p in experiment_root.glob('*/position_metadata.json')):
         position_name = position_root.name
         timepoints = positions.setdefault(position_name, collections.OrderedDict())
-        for image_path in sorted(position_root.glob(f'*.{image_ext}')):
+        for image_path in sorted(position_root.glob(f'* *.{image_ext}')):
             timepoint_name, channel = image_path.stem.split(' ', 1)
             timepoint_images = timepoints.setdefault(timepoint_name, {})
             timepoint_images[channel] = image_path
