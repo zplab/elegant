@@ -109,7 +109,7 @@ class CenterSplineWarper(base.SceneListener):
         if tck is None or image is None:
             self.warped_view.image = None
         else:
-            warped = worm_spline. to_worm_frame(image.data, tck, sample_distance=tck[0][-1] // 10, order=self._interpolate_order)
+            warped = worm_spline.to_worm_frame(image.data, tck, sample_distance=tck[0][-1] // 10, order=self._interpolate_order)
             self.warped_view.image = warped
 
     def _start_warp(self, pos):
