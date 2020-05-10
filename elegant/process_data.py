@@ -54,8 +54,7 @@ def annotate(experiment_root, annotators=[], position_annotators=[]):
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = load_data.read_annotations(experiment_root)
-    with (experiment_root / 'experiment_metadata.json').open('r') as f:
-        experiment_metadata = json.load(f)
+    experiment_metadata = load_data.read_metadata(experiment_root)
     for metadata_path in sorted(experiment_root.glob('*/position_metadata.json')):
         with metadata_path.open('r') as f:
             position_metadata = json.load(f)

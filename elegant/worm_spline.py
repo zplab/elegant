@@ -162,7 +162,7 @@ def to_worm_frame(images, center_tck, width_tck=None, width_margin=20, sample_di
         sample_distance: number of pixels to sample in each direction
             perpendicular to the centerline. The height of the output image is
             int(round(2 * sample_distance * zoom)).
-        standard_length: if not specified, the length of the output image is
+        standard_length: if not specified, the width of the output image is
             int(round(arc_length)*zoom), where arc_length is the path integral
             along center_tck (i.e. the length from beginning to end). If
             standard_length is specified, then the length of the output image is

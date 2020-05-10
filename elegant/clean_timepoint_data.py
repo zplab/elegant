@@ -87,10 +87,7 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     for position in positions:
         remove_timepoint_for_position(experiment_root, position, timepoint, dry_run=dry_run)
 
-    md_file = (experiment_root / 'experiment_metadata.json')
-    with md_file.open() as md_fp:
-        expt_md = json.load(md_fp)
-
+    expt_md = load_data.read_metadata(experiment_root)
     try:
         timepoint_idx = expt_md['timepoints'].index(timepoint)
     except ValueError:
@@ -103,7 +100,7 @@ def remove_timepoint_from_experiment(experiment_root, timepoint, dry_run=False):
     for dict_entry_type in ['brightfield metering', 'fluorescent metering', 'humidity', 'temperature']:
         del expt_md[dict_entry_type][timepoint]
 
-    datafile.json_encode_atomic_legible_to_file(expt_md, md_file)
+    load_data.write_metadata(expt_md, experiment_root)
 
 def remove_excluded_positions(experiment_root, dry_run=False):
     """Deletes excluded positions from an experiment directory
@@ -147,12 +144,10 @@ def remove_excluded_positions(experiment_root, dry_run=False):
                 if (experiment_root / 'derived_data' / 'mask' / position).exists():
                     shutil.rmtree(experiment_root / 'derived_data' / 'mask' / position)
 
-                # Load/save atomically for each position to minimize the chance of failing oneself into a bad state
-                md_file = (experiment_root / 'experiment_metadata.json')
-                with md_file.open('r') as md_fp:
-                    expt_md = json.load(md_fp)
+                # Load/save for each position to minimize the chance of failing oneself into a bad state
+                expt_md = load_data.read_metadata(experiment_root)
                 del expt_md['positions'][position]
-                datafile.json_encode_atomic_legible_to_file(expt_md, md_file)
+                load_data.write_metadata(expt_md, experiment_root)
 
 
 def remove_dead_timepoints(experiment_root, postmortem_timepoints, dry_run=False):
