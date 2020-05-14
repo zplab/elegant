@@ -40,7 +40,7 @@ class _DataclassBase:
         return tuple(getattr(self, field) for field in self._FIELDS)
 
     def __repr__(self):
-        return self.__class__.__qualname__ + '(' + ', '.join([f"{getattr(self, f)!r}" for f in self._FIELDS]) + ' )'
+        return self.__class__.__qualname__ + '(' + ', '.join([f"{getattr(self, f)!r}" for f in self._FIELDS]) + ')'
 
 
 class Experiment(_DataclassBase):
@@ -110,6 +110,9 @@ class Position(_DataclassBase):
         self.annotation_file = self.experiment.annotation_dir / (self.name + '.pickle')
         self._timepoints = None
         self._annotations = None
+
+    def __repr__(self):
+        return self.__class__.__qualname__ + f'({self.experiment.name!r}, {self.name!r})'
 
     def _load_metadata(self):
         """metadata dict for the position."""
@@ -268,7 +271,7 @@ class TimepointList(tuple):
                 if len(subset) < target_size:
                     break
             subset += list(position)
-        return [cls(flatten(subset)) for subset in subsets]
+        return list(map(cls, subsets))
 
     @classmethod
     def from_file(cls, path):
