@@ -178,7 +178,7 @@ class Experiment(_DataclassBase):
             # now transpose wth zip(*results), resulting in a list of results
             # for each timepoint rather than a list of results for each filter-function
             # and then use all() to boolean-and the results together.
-            keep_timepoints = map(all, zip(*results))
+            keep_timepoints = list(map(all, zip(*results)))
             for timepoint, keep in zip(list(position), keep_timepoints):
                 if not keep:
                     filtered_timepoints.append(position.timepoints.pop(timepoint.name))
@@ -242,7 +242,7 @@ def make_living_filter(keep_eggs, keep_dead):
 filter_living_timepoints = make_living_filter(keep_eggs=1, keep_dead=1)
 
 def filter_has_pose(timepoint):
-    pose = timepoint.get('pose')
+    pose = timepoint.annotations.get('pose')
     # make sure pose is not None, and center/width tcks are both not None
     return pose is not None and pose[0] is not None and pose[1] is not None
 

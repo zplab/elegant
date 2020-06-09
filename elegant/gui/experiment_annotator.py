@@ -174,12 +174,6 @@ class ExperimentAnnotator:
             if '__last_timepoint_annotated__' in self.position_annotations:
                 timepoint_name = self.position_annotations['__last_timepoint_annotated__']
                 i = self.timepoint_indices.get(timepoint_name, 0)
-            elif '__last_page_annotated__' in self.position_annotations:
-                # older, deprecated style. TODO: delete this elif stanza after everyone has
-                # updated their annotation dicts...
-                i = self.position_annotations['__last_page_annotated__']
-                if i > len(self.ris_widget.flipbook_pages):
-                    i = 0
             else:
                 i = 0
             self.ris_widget.flipbook.current_page_idx = i
