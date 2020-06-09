@@ -12,6 +12,10 @@ class _DataclassBase:
     """Basic methods for "data classes" that have a defined set of fields with
     which to compare and hash class instances."""
     _FIELDS = () # subclasses should provide a tuple of field names
+
+    def _cmpkey(self):
+        return tuple(getattr(self, field) for field in self._FIELDS)
+
     def _compare(self, other, method):
         try:
             return method(self._cmpkey(), other._cmpkey())
@@ -39,9 +43,6 @@ class _DataclassBase:
 
     def __hash__(self):
         return hash(self._cmpkey())
-
-    def _cmpkey(self):
-        return tuple(getattr(self, field) for field in self._FIELDS)
 
     def __repr__(self):
         return self.__class__.__qualname__ + '(' + ', '.join([f"{getattr(self, f)!r}" for f in self._FIELDS]) + ')'
@@ -89,9 +90,9 @@ class Experiment(_DataclassBase):
         return len(self.positions)
 
     def __contains__(self, position):
-        if not isinstance(position, Position):
-            return False
-        return position.experiment.path == self.path and position.name in self.positions
+        # Below will be False if dict.get returns None, i.e. don't have a position of that name
+        # otherwise, will compare positions for equality, which chains up to comparing experiments too...
+        return position is not None and self.positions.get(getattr(position, 'name', None)) == position
 
     @property
     def metadata(self):
@@ -119,12 +120,22 @@ class Experiment(_DataclassBase):
 
     @property
     def all_timepoints(self):
+        """Iterator over all timepoints in all positions in the experiment."""
         return flatten(self)
 
     def add_position(self, name, coords):
+        """Add a position at the given xyz coordinates to the experiment."""
         position = self.positions[name] = Position(self, name)
+        self._positions = dict(sorted(self.positions.items())) # make sure positions dict is in sorted order by keys
         self.metadata['positions'][name] = coords
         return position
+
+    def write_to_disk(self):
+        """Write all metadata and annotations for the experiment and all positions/timepoints."""
+        self.write_metadata()
+        for position in self:
+            position.write_metadata()
+            position.write_annotations()
 
     def filter(self, position_filter=None, timepoint_filter=None):
         """Delete positions/timepoints from an Experiment instance (but importantly
@@ -186,7 +197,26 @@ class Experiment(_DataclassBase):
                 filtered_positions.append(self.positions.pop(position.name))
         return filtered_positions, filtered_timepoints
 
+    def purge_filtered(self, filtered_positions, filtered_timepoints, dry_run=False, backup_dirname=None):
+        """Delete positions and timepoints from disk that had been filtered.
+
+        Parameters:
+            filtered_positions: list of positions to remove, as returned by filter()
+            filtered_timepoints: list of timepoints to remove, as returned by filter()
+                NB: timepoints may already be in one of the filtered_positions; this
+                duplication will be handled correctly.
+            dry_run: passed on to position/timepoint.purge_from_disk() calls.
+            backup_dirname: passed on to position.purge_from_disk() call.
+        """
+        for position in filtered_positions:
+            position.purge_from_disk(dry_run, backup_dirname)
+        filtered_positions = set(filtered_positions)
+        for timepoint in filtered_timepoints:
+            if timepoint.position not in filtered_positions:
+                timepoint.purge_from_disk(dry_run)
+
     def purge_timepoint(self, timepoint_name, dry_run=False):
+        """Remove a specific named timepoint from every position on disk and in memory"""
         for position in self:
             if timepoint_name in position.timepoints:
                 position[timepoint_name].purge_from_disk(dry_run=dry_run)
@@ -208,7 +238,7 @@ def filter_excluded(position_or_timepoint):
     return not position_or_timepoint.annotations.get('exclude', False)
 
 def filter_staged(position):
-    """Position filter for Experiment.filter() to include worms that have been
+    """Position filter for Experiment.filter() to include only worms that have been
     stage-annotated fully, are noted as "dead", and have at least one non-dead timepoint."""
     stages = [timepoint.annotations.get('stage') for timepoint in position]
     # NB: all(stages) below is True iff there is a non-None, non-empty-string
@@ -216,7 +246,7 @@ def filter_staged(position):
     return all(stages) and stages[-1] == 'dead' and stages[0] != 'dead'
 
 def filter_to_be_staged(position):
-    """Position for Experiment.filter() to include worms that still need to be
+    """Position filter for Experiment.filter() to include only worms that still need to be
     stage-annotated fully."""
     stages = [timepoint.annotations.get('stage') for timepoint in position]
     # NB: all(stages) below is True iff there is a non-None, non-empty-string
@@ -229,27 +259,34 @@ def make_living_filter(keep_eggs, keep_dead):
     staged as 'dead'.
     """
     def living_filter(position):
-        """Position filter to exclude all timepoints annotated as 'egg' or 'dead', except the last n 'egg'
-        and/or the first m 'dead' annotations. (The non-excluded 'egg' and 'dead' allow us to define the hatch and
+        """Position filter to exclude all timepoints annotated as 'egg' or 'dead', except the last {keep_eggs} 'egg'
+        and/or the first {keep_dead} 'dead' annotations. (The non-excluded 'egg' and 'dead' allow us to define the hatch and
         death times precisely.)"""
         stages = [timepoint.annotations.get('stage') for timepoint in position]
         trim_eggs = max(0, stages.count('egg') - keep_eggs)
         trim_dead = max(0, stages.count('dead') - keep_dead)
         retain = len(position) - trim_eggs - trim_dead
         return [False] * trim_eggs + [True] * retain + [False] * trim_dead
+    living_filter.__doc__ = living_filter.__doc__.format(**locals())
     return living_filter
 
 filter_living_timepoints = make_living_filter(keep_eggs=1, keep_dead=1)
 
 def filter_has_pose(timepoint):
+    """Timepoint filter for Experiment.filter() to include only worms where the
+    centerline and widths have been fully defined."""
     pose = timepoint.annotations.get('pose')
     # make sure pose is not None, and center/width tcks are both not None
     return pose is not None and pose[0] is not None and pose[1] is not None
 
 
 class Position(_DataclassBase):
+    """Class that represents a specific Position within an experiment."""
     _FIELDS = ('experiment', 'name')
     def __init__(self, experiment, name):
+        """To add a new position to an Experiment instance, use add_position() instead
+        of constructing a Position directly. Direct construction is only appropriate
+        for Positions that already exist in the backing files on disk."""
         super().__init__()
         if not isinstance(experiment, Experiment):
             experiment = Experiment(experiment)
@@ -262,8 +299,28 @@ class Position(_DataclassBase):
         self._annotations = None
         self._metadata = None
 
+    def __contains__(self, timepoint):
+        # Below will be False if dict.get returns None, i.e. don't have a timepoint of that name
+        # otherwise, will compare timepoints for equality, which chains up to comparing positions and experiments too...
+        return timepoint is not None and self.timepoints.get(getattr(timepoint, 'name', None)) == timepoint
+
+    def __iter__(self):
+        return iter(self.timepoints.values())
+
+    def __len__(self):
+        return len(self.timepoints)
+
     def __repr__(self):
         return self.__class__.__qualname__ + f'({self.experiment.name!r}, {self.name!r})'
+
+    @property
+    def timepoints(self):
+        """"Dict of Timepoint objects associated with the Position, read from
+        backing file if not presently cached."""
+        if self._timepoints is None:
+            # turns out that _load_metadata is the most sensible place to init timepoints
+            self._load_metadata()
+        return self._timepoints
 
     def _load_metadata(self):
         if self.metadata_file.exists():
@@ -281,6 +338,7 @@ class Position(_DataclassBase):
             # Don't attempt to detect or warn about this case.
 
     def write_metadata(self):
+        """Write the current set of metadata for all timepoints back to the metadata file."""
         if self._metadata is None:
             self._load_metadata()
         # read from self._metadata instead of gathering from all timepoints in self
@@ -288,27 +346,6 @@ class Position(_DataclassBase):
         # blow away their metadata
         metadata_list = [dict(timepoint=name, **rest) for name, rest in sorted(self._metadata.items())]
         datafile.json_encode_atomic_legible_to_file(metadata_list, self.metadata_file)
-
-    @property
-    def timepoints(self):
-        if self._timepoints is None:
-            # turns out that _load_metadata is the most sensible place to init timepoints
-            self._load_metadata()
-        return self._timepoints
-
-    def __contains__(self, timepoint):
-        if not isinstance(timepoint, Timepoint):
-            return False
-        position = timepoint.position
-        return (position.experiment.path == self.experiment.path and
-                position.name == self.name and
-                timepoint.name in self.timepoints)
-
-    def __iter__(self):
-        return iter(self.timepoints.values())
-
-    def __len__(self):
-        return len(self.timepoints)
 
     def _load_annotations(self):
         if self.annotation_file.exists():
@@ -327,6 +364,7 @@ class Position(_DataclassBase):
 
     @property
     def annotations(self):
+        """Dictionary of position-level annotation data."""
         if self._annotations is None:
             self._load_annotations()
         return self._annotations
@@ -339,12 +377,22 @@ class Position(_DataclassBase):
         self.annotation_file.write_bytes(pickle.dumps((self.annotations, self._timepoint_annotations)))
 
     def add_timepoint(self, name):
+        """Add a new timepoint of the given name to the Position."""
         timepoint = self.timepoints[name] = Timepoint(self, name)
-        timepoint._metadata = self._metadata[name] = {}
+        self._timepoints = dict(sorted(self.timepoints.items())) # make sure timepoints dict is in sorted order by keys
+        timepoint._metadata = self.metadata[name] = {}
+        self._load_annotations()
         timepoint._annotations = self._timepoint_annotations[name] = {}
         return timepoint
 
     def purge_from_disk(self, dry_run=False, backup_dirname=None):
+        """Remove an entire position from disk, including metadata, annotations, and derived data.
+
+        Parameters:
+            dry_run: if True, do not actually delete any files or entries in metadata/annotations.
+            backup_dirname: if not None, name of a directory to copy the position
+                data/metadata/annotations into.
+        """
         annotation_dir = self.experiment.annotation_dir
         if backup_dirname is not None and not dry_run:
             # don't actually backup if just doing a dry run
@@ -369,9 +417,12 @@ class Position(_DataclassBase):
             self.experiment.write_metadata()
 
 class Timepoint(_DataclassBase):
+    """Class to represent a timepoint of a specific position within an experiment"""
     _FIELDS = ('position', 'name')
-    _METADATA_FILENAME = 'position_metadata.json'
     def __init__(self, position, name):
+        """To add a new timepoint to a Position instance, use add_timepoint() instead
+        of constructing a Timepoint directly. Direct construction is only appropriate
+        for Timepoints that already exist in the backing files on disk."""
         super().__init__()
         self.position = position
         self.name = name
@@ -380,18 +431,29 @@ class Timepoint(_DataclassBase):
 
     @property
     def annotations(self):
+        """Annotation dictionary pertaining to the specific timepoint.
+
+        NB: annotations for all timepoints are stored in a single, per-position
+        file, so to write changes to this dict to disk, use Position.write_annotations()
+        """
         if self._annotations is None:
             self.position._load_annotations()
         return self._annotations
 
     @property
     def metadata(self):
+        """Metadata dictionary pertaining to the specific timepoint.
+
+        NB: metadata for all timepoints are stored in a single, per-position
+        file, so to write changes to this dict to disk, use Position.write_metadata()
+        """
         if self._metadata is None:
             self.position._load_metadata()
         return self._metadata
 
     @property
     def path(self):
+        """Pseudo-path representing the prefix for all data files for this timepoint"""
         return self.position.path / self.name
 
     def image_path(self, image_type, suffix='png'):
@@ -399,8 +461,13 @@ class Timepoint(_DataclassBase):
         return self.position.path / f'{self.name} {image_type}.{suffix}'
 
     def purge_from_disk(self, dry_run=False):
+        """Remove this position from disk, including metadata, annotations, and derived data.
+
+        Parameters:
+            dry_run: if True, do not actually delete any files or entries in metadata/annotations.
+        """
         images_for_timepoint = sorted(self.position.path.glob(f'{self.name} *'))
-        derived_for_timepoint = sorted((self.experiment_root / 'derived_data').glob(f'*/{self.position.name}/{self.name} *'))
+        derived_for_timepoint = sorted((self.position.experiment.path / 'derived_data').glob(f'*/{self.position.name}/{self.name} *'))
         for f in images_for_timepoint + derived_for_timepoint:
             _maybe_delete(f, dry_run)
 
@@ -449,11 +516,12 @@ class Timepoints(tuple):
     """
     @classmethod
     def from_experiments(cls, *experiments):
+        """Flatten all of the timepoints from one or more Experiment instances into a Timepoints instance."""
         return cls(flatten(flatten(experiments)))
 
     @classmethod
     def split_experiments(cls, *experiments, fractions=[0.75, 0.25], random_seed=0):
-        """Split one or more positions dictionaries to multiple Timepointss.
+        """Split one or more positions dictionaries to multiple Timepoints instances.
 
         Positions are split across multiple Timepointss based on a list of
         fractions, which controls the fraction of the total number of timepoints
@@ -464,15 +532,14 @@ class Timepoints(tuple):
         seed, for reproducibility) before being split.
 
         Parameters:
-            *positions_dicts: one or more positions dictionaries as returned
-                by load_data.read_positions (&c.)
-            fractions: list that must sum to 1 that specifies the approximate
+            *experiments: one or more Experiment instances.
+            fractions: list (which must sum to 1) that specifies the approximate
                 fraction of the total number of timepoints which will be in the
                 corresponding Timepoints.
             random_seed: string or integer providing random seed for reproducible
                 shuffling of the positions.
 
-        Returns: list of Timepoints instance of same length as fractions.
+        Returns: list of Timepoints instances of same length as fractions.
         """
         positions = list(flatten(experiments))
         assert sum(fractions) == 1
@@ -487,8 +554,7 @@ class Timepoints(tuple):
         round_robin = itertools.cycle(zip(target_sizes, subsets))
         for position in positions:
             # find the next subset that still needs more timepoints
-            while True:
-                target_size, subset = next(round_robin)
+            for target_size, subset in round_robin:
                 if len(subset) < target_size:
                     break
             subset += list(position)
