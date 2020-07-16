@@ -542,7 +542,7 @@ class Timepoints(tuple):
         Returns: list of Timepoints instances of same length as fractions.
         """
         positions = list(flatten(experiments))
-        assert sum(fractions) == 1
+        assert  numpy.isclose(1, sum(fractions))
         # shuffle with a new Random generator from the specified seed. (Don't just re-seed the
         # default random generator, because that would mess up other random streams if in use.)
         random.Random(random_seed).shuffle(positions)
