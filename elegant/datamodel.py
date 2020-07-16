@@ -533,7 +533,7 @@ class Timepoints(tuple):
 
         Parameters:
             *experiments: one or more Experiment instances.
-            fractions: list (which must sum to 1) that specifies the approximate
+            fractions: list (which must sum to <=1) that specifies the approximate
                 fraction of the total number of timepoints which will be in the
                 corresponding Timepoints.
             random_seed: string or integer providing random seed for reproducible
@@ -542,7 +542,7 @@ class Timepoints(tuple):
         Returns: list of Timepoints instances of same length as fractions.
         """
         positions = list(flatten(experiments))
-        assert sum(fractions) == 1
+        assert sum(fractions) <= 1 and all(0 <= fraction <= 1 for fraction in fractions)
         # shuffle with a new Random generator from the specified seed. (Don't just re-seed the
         # default random generator, because that would mess up other random streams if in use.)
         random.Random(random_seed).shuffle(positions)
@@ -554,9 +554,12 @@ class Timepoints(tuple):
         round_robin = itertools.cycle(zip(target_sizes, subsets))
         for position in positions:
             # find the next subset that still needs more timepoints
-            for target_size, subset in round_robin:
+            for target_size, subset in itertools.islice(round_robin, len(fractions)):
                 if len(subset) < target_size:
                     break
+            else:
+                # didn't break out of for loop; therefore all subsets are >= their target_size
+                break # so break out looping over positions
             subset += list(position)
         return list(map(cls, subsets))
 
