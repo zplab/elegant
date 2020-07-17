@@ -5,7 +5,7 @@ import freeimage
 from elegant import process_images
 from elegant import worm_spline
 
-class WormFrameDataset(data.Dataset):
+class WormDataset(data.Dataset):
     def __init__(self, timepoints, generate_data):
         super().__init__()
         self.timepoints = timepoints
