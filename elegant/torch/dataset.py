@@ -45,7 +45,7 @@ class WormDataset(data.Dataset):
 
     def __getitem__(self, i):
         timepoint = self.timepoints[i]
-        return generate_data(timepoint)
+        return self.generate_data(timepoint)
 
 
 def normalized_bf_image(timepoint):
