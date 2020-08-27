@@ -2,27 +2,60 @@
 
 import atexit
 import pathlib
+import collections
+import random
 
 from PyQt5 import Qt
 
 from ris_widget import shared_resources
 from ris_widget.overlay import base
 
-from .. import load_data
+from .. import datamodel
 from .. import process_data
 
+def _get_display_name(obj):
+    if hasattr(obj, 'display_name'):
+        return obj.display_name
+    elif hasattr(obj, 'name'):
+        return obj.name
+    else:
+        return ''
+
+def shuffle_and_blind_experiments(*experiments, random_seed=0):
+    """Shuffle one or more datamodel.Experiments and blind the names.
+
+    datamodel.Position instances from the provided experiment(s) are randomly
+    shuffled (based on a fixed, specified random seed, for reproducibility) and
+    their names obscured for blind annotation.
+
+    Parameters:
+        *experiments: one or more datamodel.Experiment instances, or lists of
+            datamodel.Position instances.
+        random_seed: string or integer providing random seed for reproducible
+            shuffling of the positions.
+
+    Returns: list datamodel.Position instances.
+    """
+    positions = collections.UserList(datamodel.flatten(experiments))
+    positions.display_name = 'blinded positions'
+    # shuffle with a new Random generator from the specified seed. (Don't just re-seed the
+    # default random generator, because that would mess up other random streams if in use.)
+    random.Random(random_seed).shuffle(positions)
+    for i, position in enumerate(positions):
+        position.display_name = str(i)
+        for j, timepoint in enumerate(position):
+            timepoint.display_name = str(j)
+    return positions
+
 class ExperimentAnnotator:
-    def __init__(self, ris_widget, experiment_name, positions, annotation_fields, start_position=None, readonly=False, annotation_dir='annotations'):
+    def __init__(self, ris_widget, positions, annotation_fields, start_position=None, readonly=False, channels='bf'):
         """Set up a GUI for annotating an entire experiment.
 
-        Annotations for each experiment position (i.e. each worm) are loaded
-        and saved from an 'annotations' directory in each experiment directory.
-        This directory will be created as needed. Upon switching between
-        positions, the annotations for the previous position will be saved out
-        as a pickle file named based on the position name. The pickle file will
-        contain a dictionary mapping timepoint names to the annotation
-        dictionaries produced by  ris_widget annotators and saved in the
-        'annotations' attribute of each flipbook page.
+        Produce annotations for experimental positions (i.e. each worm). Loading
+        and saving annotations is handled by the underlying datamodel classes;
+        the entries in the annotations dictionaries will be those in the ris_widget
+        flibook's annotations dictionaries (the 'annotations' attribute of each
+        flipbook page), as produced by ris_widget annotators.
 
         Keyboard shortcuts:
             [ and ] switch between worms
@@ -31,39 +64,38 @@ class ExperimentAnnotator:
 
         Parameters:
             ris_widget: a RisWidget object
-            experiment_name: name of experiment to display. If a filesystem
-                path, only the last component is shown.
-            positions: ordered dictionary of position names (i.e. worm names)
-                mapping to ordered dictionaries of timepoint names, each of
-                which maps to a list of image paths to load for each timepoint.
-                Note: load_data.scan_experiment_dir() provides exactly this.
+            positions: a sequence of datamodel.Position instances. Most commonly
+                a datamodel.Experiment instance, but could also be a list/tuple
+                of Position instances. Each Position and each Timepoint within
+                that position will be displayed using the 'display_name' attribute
+                if present, else the 'name' attribute.
             annotation_fields: list of annotation fields to pass to
                 ris_widget.add_annotator()
             start_position: name of starting position to load first (e.g. "009").
                 if none specified, load the first position. To change to an
                 arbitrary position mid-stream, call the load_position() method.
-            annotation_dir: str/pathlib.Path to the subdirectory from where to
-                load/save annotaions.
-
+            readonly: do not write changes to annotation files on disk
+            channels: image channel or list of channels to load to the flipbook from
+                each timepoint
         """
         self.ris_widget = ris_widget
         self.readonly = readonly
-        self.annotation_dir = annotation_dir
         ris_widget.add_annotator(annotation_fields)
-        self.annotation_fields = annotation_fields
-        self._init_positions(positions)
+        for field in annotation_fields:
+            # give fields a reference to the annotator should they need that information
+            field.experiment_annotator = self
+        if isinstance(channels, str):
+            channels = [channels]
+        self.channels = channels
 
-        # skip positions with no timepoints listed (don't do this in _init_positions
-        # because a subclass might override it and we don't want to duplicate logic)
-        position_names, positions = [], []
-        for name, timepoints in zip(self.position_names, self.positions):
-            if len(timepoints) > 0:
-                position_names.append(name)
-                positions.append(timepoints)
-        self.position_names = position_names
-        self.positions = positions
+        self.positions = [position for position in positions if len(position) > 0]
+        self.position_names_to_indices = {_get_display_name(position): i for i, position in enumerate(self.positions)}
 
-        self.position_names_to_indices = {name: i for i, name in enumerate(self.position_names)}
+        if not self.readonly:
+            # update the annotations file(s)
+            for experiment in set(position.experiment for position in self.positions):
+                process_data.update_annotations(experiment.path)
+
         self.position_i = None
         self.flipbook = ris_widget.flipbook
 
@@ -73,14 +105,15 @@ class ExperimentAnnotator:
         if hasattr(ris_widget, 'alt_view'):
             self.alt_zoom = ZoomListener(ris_widget.alt_view)
 
-        widget = Qt.QGroupBox(pathlib.Path(experiment_name).name)
+        display_name = _get_display_name(positions)
+        widget = Qt.QGroupBox(display_name)
         layout = Qt.QVBoxLayout(widget)
         layout.setSpacing(0)
         worm_info = Qt.QHBoxLayout()
         worm_info.setSpacing(11)
         self.pos_editor = Qt.QLineEdit()
         self.pos_editor.editingFinished.connect(self._on_pos_editing_finished)
-        maxlen = max(map(len, self.position_names))
+        maxlen = max(map(len, self.positions))
         self.pos_editor.setMaxLength(maxlen)
         self.pos_editor.setAlignment(Qt.Qt.AlignCenter)
         w = self.pos_editor.fontMetrics().boundingRect('0'*maxlen).width()
@@ -118,15 +151,6 @@ class ExperimentAnnotator:
             self.load_position(start_position)
         atexit.register(self.save_annotations)
 
-    def _init_positions(self, positions):
-        # this function allows subclasses to re-interpret the positions parameter
-        self.position_names = list(positions.keys())
-        self.positions = list(positions.values())
-        if not self.readonly:
-            self.timepoints = self.positions[0] # required for experiment_root property to work
-            # update the annotations file
-            process_data.update_annotations(self.experiment_root)
-
     def _add_button(self, layout, title, callback):
         button = Qt.QPushButton(title)
         button.clicked.connect(callback)
@@ -145,7 +169,7 @@ class ExperimentAnnotator:
         self.load_position_index(self.position_names_to_indices[name])
 
     def load_position_index(self, i):
-        num_positions = len(self.position_names)
+        num_positions = len(self.positions)
         if i is not None and i < 0:
             i += num_positions
         if not (i is None or 0 <= i < num_positions):
@@ -156,80 +180,62 @@ class ExperimentAnnotator:
             self.save_annotations()
         self.position_i = i
         self.ris_widget.flipbook_pages.clear()
-        self.position_annotations = {}
         if i is not None:
             self._prev_button.setEnabled(i != 0)
             self._next_button.setEnabled(i != num_positions - 1)
-            self.timepoints = self.positions[i]
-            self.timepoint_indices = {name: i for i, name in enumerate(self.timepoints.keys())}
+            self.position = self.positions[i]
             self.pos_editor.setText(self.position_name)
             self.pos_label.setText(f'({i+1}/{len(self.positions)})')
-            timepoint_names = self.timepoints.keys()
-            futures = self.load_timepoints()
-            for timepoint_name, page in zip(timepoint_names, self.ris_widget.flipbook_pages):
-                page._timepoint_name = timepoint_name
+            futures = self.add_images_to_flipbook()
             self.load_annotations()
-            for field in self.annotation_fields:
-                field.position_annotations = self.position_annotations
-            if '__last_timepoint_annotated__' in self.position_annotations:
-                timepoint_name = self.position_annotations['__last_timepoint_annotated__']
-                i = self.timepoint_indices.get(timepoint_name, 0)
-            else:
-                i = 0
-            self.ris_widget.flipbook.current_page_idx = i
+            last_i = 0
+            if '__last_timepoint_annotated__' in self.position.annotations:
+                last_timepoint_name = self.position.annotations['__last_timepoint_annotated__']
+                for i, timepoint in enumerate(self.position):
+                    # use actual timepoint.name, not display_name, since the former is authoritative
+                    if timepoint.name == last_timepoint_name:
+                        last_i = i
+                        break
+            self.ris_widget.flipbook.current_page_idx = last_i
             self.ris_widget.flipbook.pages_view.setFocus()
             return futures
         else:
+            self.position = None
             self.pos_editor.setText('')
             self.pos_label.setText('')
             return []
 
-    def load_timepoints(self):
-        return load_data.add_position_to_flipbook(self.ris_widget, self.timepoints)
+    def add_images_to_flipbook(self):
+        page_names, image_paths, image_names = [], [], []
+        for timepoint in self.position:
+            page_names.append(_get_display_name(timepoint))
+            image_paths.append([timepoint.image_path(channel) for channel in self.channels])
+            image_names.append(self.channels)
+        return self.ris_widget.add_image_files_to_flipbook(image_paths, page_names, image_names)
 
     @property
     def position_name(self):
-        return self.position_names[self.position_i]
-
-    @property
-    def experiment_root(self):
-        first_image = next(iter(self.timepoints.values()))[0]
-        return first_image.parent.parent
-
-    @property
-    def annotation_file(self):
-        return self.experiment_root / self.annotation_dir / (self.position_name + '.pickle')
+        return _get_display_name(self.position)
 
     def load_annotations(self):
-        try:
-            self.position_annotations, self.timepoint_annotations = load_data.read_annotation_file(self.annotation_file)
-        except FileNotFoundError:
-            self.position_annotations = {}
-            self.timepoint_annotations = {}
-        self.exclude.setChecked(self.position_annotations.get('exclude', False)) # Set to include by default
-        self.notes.setPlainText(self.position_annotations.get('notes', ''))
-        unknown_timepoints = []
-        for timepoint_name, annotations in self.timepoint_annotations.items():
-            if timepoint_name not in self.timepoint_indices:
-                unknown_timepoints.append(timepoint_name)
-            else:
-                page_i = self.timepoint_indices[timepoint_name]
-                self.ris_widget.flipbook_pages[page_i].annotations = dict(annotations) # make a copy
-        if len(unknown_timepoints) > 0:
-            print('Annotations were found for some timepoints that have not been loaded in the annotator.')
-            print('These annotations will be preserved.')
+        self.exclude.setChecked(self.position.annotations.get('exclude', False)) # Set to include by default
+        self.notes.setPlainText(self.position.annotations.get('notes', ''))
+        for page, timepoint in zip(self.ris_widget.flipbook_pages, self.position):
+            annotations = timepoint.annotations
+            if self.readonly:
+                # make a copy so we can't save out changes even if we wanted
+                annotations = dict(annotations)
+            page.annotations = annotations
+            page.timepoint = timepoint
         self.ris_widget.annotator.update_fields()
 
     def save_annotations(self):
-        if self.readonly is True:
+        if self.readonly:
             return
-        for page in self.ris_widget.flipbook_pages:
-            self.timepoint_annotations[page._timepoint_name] = getattr(page, 'annotations', {})
-        self.position_annotations['notes'] = self.notes.toPlainText()
-        self.position_annotations['exclude'] = self.exclude.isChecked()
-        current_timepoint_name = list(self.timepoints.keys())[self.ris_widget.flipbook.current_page_idx]
-        self.position_annotations['__last_timepoint_annotated__'] = current_timepoint_name
-        load_data.write_annotation_file(self.annotation_file, self.position_annotations, self.timepoint_annotations)
+        self.position.annotations['notes'] = self.notes.toPlainText()
+        self.position.annotations['exclude'] = self.exclude.isChecked()
+        self.position.annotations['__last_timepoint_annotated__'] = self.ris_widget.flipbook.current_page.timepoint.name
+        self.position.write_annotations()
 
     def prev_timepoint(self):
         self.flipbook.focus_prev_page()
@@ -241,7 +247,7 @@ class ExperimentAnnotator:
         return self.load_position_index(max(0, self.position_i - 1))
 
     def next_position(self):
-        last_i = len(self.position_names) - 1
+        last_i = len(self.positions) - 1
         return self.load_position_index(min(self.position_i + 1, last_i))
 
 

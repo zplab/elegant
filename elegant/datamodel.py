@@ -416,6 +416,23 @@ class Position(_DataclassBase):
             del self.experiment.metadata['positions'][self.name]
             self.experiment.write_metadata()
 
+    def add_images_to_flipbook(self, ris_widget, channels='bf', suffix='png'):
+        """Add timepoint images from the position to the ris_widget flipbook.
+
+        To wait for all the image loading tasks to finish:
+            from concurrent import futures
+            futs = position.add_images_to_flipbook(ris_widget)
+            futures.wait(futs)"""
+        if isinstance(channels, str):
+            channels = [channels]
+        page_names = []
+        image_paths = []
+        for timepoint in self:
+            page_names.append(timepoint.name)
+            image_paths.append([timepoint.image_path(channel, suffix) for channel in channels])
+        return ris_widget.add_image_files_to_flipbook(image_paths, page_names)
+
+
 class Timepoint(_DataclassBase):
     """Class to represent a timepoint of a specific position within an experiment"""
     _FIELDS = ('position', 'name')
@@ -456,9 +473,9 @@ class Timepoint(_DataclassBase):
         """Pseudo-path representing the prefix for all data files for this timepoint"""
         return self.position.path / self.name
 
-    def image_path(self, image_type, suffix='png'):
-        """Return the path to the requested image type for this timepoint."""
-        return self.position.path / f'{self.name} {image_type}.{suffix}'
+    def image_path(self, channel, suffix='png'):
+        """Return the path to the requested image channel for this timepoint."""
+        return self.position.path / f'{self.name} {channel}.{suffix}'
 
     def purge_from_disk(self, dry_run=False):
         """Remove this position from disk, including metadata, annotations, and derived data.
@@ -521,7 +538,7 @@ class Timepoints(tuple):
 
     @classmethod
     def split_experiments(cls, *experiments, fractions=[0.75, 0.25], random_seed=0):
-        """Split one or more positions dictionaries to multiple Timepoints instances.
+        """Split one or more Experiments to multiple Timepoints instances.
 
         Positions are split across multiple Timepointss based on a list of
         fractions, which controls the fraction of the total number of timepoints

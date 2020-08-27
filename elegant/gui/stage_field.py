@@ -120,6 +120,6 @@ class StageField(annotator.AnnotationField):
             if not hasattr(page, 'annotations'):
                 return
             timepoint_annotations.append(page.annotations)
-        if not hasattr(self, 'position_annotations'):
+        if not hasattr(self, 'experiment_annotator'):
             return
-        process_data._update_ages(timepoint_annotations, self.position_annotations, self.name, self.stages[0])
+        process_data._update_ages(timepoint_annotations, self.experiment_annotator.position.annotations, self.name, self.stages[0])
