@@ -649,7 +649,7 @@ def load_positions_from_timepoints_file(path):
     experiments, positions, timepoints = _load_from_file_helper(path)
     return list(positions.values())
 
-def _load_from_file_helper(path)
+def _load_from_file_helper(path):
     paths = pathlib.Path(path).read_text().strip('\n').split('\n')
     experiments = {}
     positions = {}
