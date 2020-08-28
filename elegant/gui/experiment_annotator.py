@@ -37,6 +37,7 @@ def shuffle_and_blind_experiments(*experiments, random_seed=0):
     Returns: list datamodel.Position instances.
     """
     positions = collections.UserList(datamodel.flatten(experiments))
+    # needs to be a UserList so a display_name attribute can be set
     positions.display_name = 'blinded positions'
     # shuffle with a new Random generator from the specified seed. (Don't just re-seed the
     # default random generator, because that would mess up other random streams if in use.)

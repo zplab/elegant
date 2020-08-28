@@ -118,6 +118,17 @@ class Experiment(_DataclassBase):
                     self._positions[name] = position
         return self._positions
 
+    def reload_positions(self, reload_timepoints=False):
+        """Re-read positions from backing files. Restores any positions removed
+        e.g. in filtering operations. If reload_timepoints is True, any removed
+        timepoints from all positions will also be reloaded too. Any unsaved
+        position or timepoint annotations / metatada will be lost."""
+        self._positions = None
+        positions = self.positions
+        if reload_timepoints:
+            for position in positions:
+                position.reload_timepoints()
+
     @property
     def all_timepoints(self):
         """Iterator over all timepoints in all positions in the experiment."""
@@ -321,6 +332,12 @@ class Position(_DataclassBase):
             # turns out that _load_metadata is the most sensible place to init timepoints
             self._load_metadata()
         return self._timepoints
+
+    def reload_timepoints(self,):
+        """Re-read timepoints from backing files. Restores any timepoints removed
+        e.g. in filtering operations. Any unsaved annotations / metatada will be lost."""
+        self._timepoints = None
+        self._load_metadata()
 
     def _load_metadata(self):
         if self.metadata_file.exists():
@@ -596,24 +613,7 @@ class Timepoints(tuple):
 
         Returns: Timepoints instance.
         """
-        paths = pathlib.Path(path).read_text().strip('\n').split('\n')
-        experiments = {}
-        positions = {}
-        timepoints = []
-        for path in paths:
-            path = pathlib.Path(path)
-            timepoint_name = path.name
-            position_dir = path.parent
-            position_name = position_dir.name
-            experiment_root = position_dir.parent
-            if experiment_root not in experiments:
-                experiments[experiment_root] = Experiment(experiment_root)
-            experiment = experiments[experiment_root]
-            pos_key = (experiment_root, position_name)
-            if pos_key not in positions:
-                positions[pos_key] = Position(experiment, position_name)
-            position = positions[pos_key]
-            timepoints.append(Timepoint(position, timepoint_name))
+        experiments, positions, timepoints = _load_from_file_helper(path)
         return cls(timepoints)
 
     def to_file(self, path):
@@ -626,3 +626,53 @@ class Timepoints(tuple):
             path: path to a text file to write.
         """
         pathlib.Path(path).write_text('\n'.join(str(t.path) for t in self))
+
+def load_positions_from_timepoints_file(path):
+    """Load a text file of timepoint pseudo-paths into a list of Positions.
+
+    The file is expected to be lines of pseudo-paths of the form:
+    /path/to/experiment_root/position_name/timepoint_name
+    where:
+    /path/to/experiment_root/position_name
+    is a valid path to a position directory containing one or more image
+    files with the provided timepoint_name prefix.
+
+    The returned list of Position instances will contain Timepoint instances for
+    all of the listed timepoints, and none others. Timepoints for a given position
+    need not be contiguously listed in the file to be properly associated together.
+
+    Parameter:
+        path: path to a text file containing pseudo-paths as specified above.
+
+    Returns: list of Position instance.
+    """
+    experiments, positions, timepoints = _load_from_file_helper(path)
+    return list(positions.values())
+
+def _load_from_file_helper(path)
+    paths = pathlib.Path(path).read_text().strip('\n').split('\n')
+    experiments = {}
+    positions = {}
+    timepoints = []
+    for path in paths:
+        path = pathlib.Path(path)
+        timepoint_name = path.name
+        position_dir = path.parent
+        position_name = position_dir.name
+        experiment_root = position_dir.parent
+        if experiment_root not in experiments:
+            experiments[experiment_root] = Experiment(experiment_root)
+        experiment = experiments[experiment_root]
+        pos_key = (experiment_root, position_name)
+        if pos_key not in positions:
+            positions[pos_key] = Position(experiment, position_name)
+        position = positions[pos_key]
+        if experiment._positions is None:
+            experiment._positions = {}
+        experiment.positions[position_name] = position
+        timepoint = Timepoint(position, timepoint_name)
+        if position._timepoints is None:
+            position._timepoints = {}
+        position.timepoints[timepoint_name] = timepoint
+        timepoints.append(timepoint)
+    return experiments, positions, timepoints
