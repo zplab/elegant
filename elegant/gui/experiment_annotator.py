@@ -92,11 +92,6 @@ class ExperimentAnnotator:
         self.positions = [position for position in positions if len(position) > 0]
         self.position_names_to_indices = {_get_display_name(position): i for i, position in enumerate(self.positions)}
 
-        if not self.readonly:
-            # update the annotations file(s)
-            for experiment in set(position.experiment for position in self.positions):
-                process_data.update_annotations(experiment.path)
-
         self.position_i = None
         self.flipbook = ris_widget.flipbook
 
@@ -151,6 +146,13 @@ class ExperimentAnnotator:
         else:
             self.load_position(start_position)
         atexit.register(self.save_annotations)
+
+    def update_annotations(self):
+        """Call elegant.process_data.update_annotations on all experiments known to the annotator."""
+        if not self.readonly:
+            # update the annotations file(s)
+            for experiment in set(timepoint.position.experiment for position in self.positions for timepoint in position):
+                process_data.update_annotations(experiment.path)
 
     def _add_button(self, layout, title, callback):
         button = Qt.QPushButton(title)

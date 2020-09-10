@@ -391,6 +391,7 @@ class Position(_DataclassBase):
 
         Note that if a timepoint was removed by a filtering operation, write_annotations will NOT
         remove those annotations."""
+        self.annotation_file.parent.mkdir(exist_ok=True, parents=True)
         self.annotation_file.write_bytes(pickle.dumps((self.annotations, self._timepoint_annotations)))
 
     def add_timepoint(self, name):
@@ -432,6 +433,28 @@ class Position(_DataclassBase):
         if not dry_run:
             del self.experiment.metadata['positions'][self.name]
             self.experiment.write_metadata()
+
+    def relocate_annotations(self, new_root, copy_original=False):
+        """Change the location where the annotation data is stored.
+
+        Useful in cases where it is desirable to modify a copy of the
+        annotations, and/or store them outside of the epxeriment directories.
+        For example, with a collection of Position instances from different
+        experiments that one wishes to annotate all together:
+            new_root = pathlib.Path('/path/to/new/annotations/dir')
+            for position in positions:
+                position.relocate_annotations(new_root / position.experiment.name, copy_original=True)
+
+        Parameters:
+            new_root: new root directory where position annotations will be stored.
+            copy_original: if True, annotation data from the original root will
+                be loaded and copied over to the new directory.
+        """
+            if copy_original:
+                self._load_annotations()
+            self.annotation_file = pathlib.Path(new_root) / self.annotation_file.name
+            if copy_original:
+                self.save_annotations()
 
     def add_images_to_flipbook(self, ris_widget, channels='bf', suffix='png'):
         """Add timepoint images from the position to the ris_widget flipbook.
