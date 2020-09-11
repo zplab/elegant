@@ -321,6 +321,9 @@ class Position(_DataclassBase):
     def __len__(self):
         return len(self.timepoints)
 
+    def __repr__(self):
+        return self.__class__.__qualname__ + f'({self.experiment.name!r}, {self.name!r})'
+
     @property
     def timepoints(self):
         """"Dict of Timepoint objects associated with the Position, read from
