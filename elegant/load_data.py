@@ -79,10 +79,12 @@ def scan_experiment_dir(experiment_root, channels='bf', timepoint_filter=None,
     scan_positions() function:
         files = scan_positions('path/to/experiment', filter_excluded)
     """
+    experiment_root = pathlib.Path(experiment_root)
     positions = scan_all_images(experiment_root, image_ext)
     if isinstance(channels, str):
         channels = [channels]
     filtered_positions = collections.OrderedDict()
+    filtered_positions.experiment_root = experiment_root
     for position_name, timepoints in positions.items():
         filtered_timepoints = collections.OrderedDict()
         for timepoint_name, timepoint_images in timepoints.items():
@@ -117,6 +119,7 @@ def scan_all_images(experiment_root, image_ext='png'):
     """
     experiment_root = pathlib.Path(experiment_root)
     positions = collections.OrderedDict()
+    positions.experiment_root = experiment_root
     for position_root in sorted(p.parent for p in experiment_root.glob('*/position_metadata.json')):
         position_name = position_root.name
         timepoints = positions.setdefault(position_name, collections.OrderedDict())
@@ -200,6 +203,7 @@ def read_annotations(experiment_root, annotation_dir='annotations'):
     experiment_root = pathlib.Path(experiment_root)
     annotation_root = experiment_root / annotation_dir
     positions = collections.OrderedDict()
+    positions.experiment_root = experiment_root
     for annotation_file in sorted(annotation_root.glob('*.pickle')):
         worm_name = annotation_file.stem
         positions[worm_name] = read_annotation_file(annotation_file)
@@ -317,6 +321,10 @@ def filter_annotations(positions, position_filter):
         new_positions = filter_annotations(positions, filter_excluded)
     """
     selected_positions = collections.OrderedDict()
+    try:
+        selected_positions.experiment_root = positions.experiment_root
+    except AttributeError:
+        selected_positions.experiment_root = None
     for position_name, annotations in positions.items():
         position_annotations, timepoint_annotations = annotations
         include = position_filter(position_name, position_annotations, timepoint_annotations)

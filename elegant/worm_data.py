@@ -86,7 +86,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
     """
     worms = Worms()
     for path_glob in path_globs:
-        paths = glob.glob(str(path_glob), recursive=True)
+        paths = sorted(glob.glob(str(path_glob), recursive=True))
         if len(paths) == 0:
             raise FileNotFoundError(f'"{path_glob}" matches no files.')
         for path in map(pathlib.Path, paths):
@@ -101,7 +101,7 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
     elif summary_globs is None:
         summary_globs = []
     for path_glob in summary_globs:
-        paths = glob.glob(str(path_glob), recursive=True)
+        paths = sorted(glob.glob(str(path_glob), recursive=True))
         if len(paths) == 0:
             raise FileNotFoundError(f'"{path_glob}" matches no files.')
         for path in paths:
@@ -638,6 +638,19 @@ def _valid_values(array):
     else:
         return numpy.ones(array.shape, dtype=bool)
 
+def _format_value(value):
+    if value is None:
+        return ''
+    elif isinstance(value, (float, numpy.floating)):
+        if numpy.isnan(value):
+            return ''
+        elif abs(value) > 1:
+            return '{:.4f}'.format(value).rstrip('0').rstrip('.')
+        else:
+            return '{:.5g}'.format(value)
+    else:
+        return str(value)
+
 class Worms(collections.UserList):
     """List-like collection of Worm objects with convenience functions.
 
@@ -738,7 +751,7 @@ class Worms(collections.UserList):
         elif features[0] != 'name':
             if 'name' in features:
                 features.remove('name')
-            features.insert('name', 0)
+            features.insert(0, 'name')
         data = [features]
         for worm in self:
             row = []
@@ -746,7 +759,7 @@ class Worms(collections.UserList):
                 if feature not in worm.__dict__ and error_on_missing:
                     raise ValueError(f'Worm "{worm.name}" has no "{feature}" feature.')
                 else:
-                    row.append(getattr(worm, feature, ''))
+                    row.append(_format_value(getattr(worm, feature, '')))
             data.append(row)
         datafile.write_delimited(path, data, delimiter)
 
@@ -798,7 +811,7 @@ class Worms(collections.UserList):
         elif features[0] != 'timepoint':
             if 'timepoint' in features:
                 features.remove('timepoint')
-            features.insert('timepoint', 0)
+            features.insert(0, 'timepoint')
 
         if multi_worm_file:
             data = [['name'] + features]
@@ -813,12 +826,7 @@ class Worms(collections.UserList):
                     else:
                         vals = missing
                 else:
-                    vals = getattr(worm.td, feature)
-                    if vals.dtype == float:
-                        good = ~numpy.isnan(vals)
-                        vals = [str(v) if g else '' for v, g in zip(vals, good)]
-                    elif vals.dtype == object:
-                        vals = [str(v) if v is not None else '' for v in vals]
+                    vals = [_format_value(v) for v in getattr(worm.td, feature)]
                 cols.append(vals)
             assert all(len(c) == n for c in cols)
             rows = [[] for _ in range(n)]

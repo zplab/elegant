@@ -147,7 +147,7 @@ def _image_mode_rw(image, mask_geometry=None):
 
 def _image_mode_numpy(image, mask=None):
     if mask is None:
-        pixels = image.flat
+        pixels = image.flatten()
     else:
         pixels = image[mask]
     if image.dtype == numpy.uint8:
