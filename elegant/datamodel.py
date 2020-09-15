@@ -454,7 +454,7 @@ class Position(_DataclassBase):
             self._load_annotations()
         self.annotation_file = pathlib.Path(new_root) / self.annotation_file.name
         if copy_original:
-            self.save_annotations()
+            self.write_annotations()
 
     def add_images_to_flipbook(self, ris_widget, channels='bf', suffix='png'):
         """Add timepoint images from the position to the ris_widget flipbook.
