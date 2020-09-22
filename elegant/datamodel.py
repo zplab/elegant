@@ -450,11 +450,11 @@ class Position(_DataclassBase):
             copy_original: if True, annotation data from the original root will
                 be loaded and copied over to the new directory.
         """
-            if copy_original:
-                self._load_annotations()
-            self.annotation_file = pathlib.Path(new_root) / self.annotation_file.name
-            if copy_original:
-                self.save_annotations()
+        if copy_original:
+            self._load_annotations()
+        self.annotation_file = pathlib.Path(new_root) / self.annotation_file.name
+        if copy_original:
+            self.write_annotations()
 
     def add_images_to_flipbook(self, ris_widget, channels='bf', suffix='png'):
         """Add timepoint images from the position to the ris_widget flipbook.
