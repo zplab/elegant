@@ -109,7 +109,7 @@ class ExperimentAnnotator:
         worm_info.setSpacing(11)
         self.pos_editor = Qt.QLineEdit()
         self.pos_editor.editingFinished.connect(self._on_pos_editing_finished)
-        maxlen = max(map(len, self.positions))
+        maxlen = max(len(_get_display_name(position)) for position in self.positions)
         self.pos_editor.setMaxLength(maxlen)
         self.pos_editor.setAlignment(Qt.Qt.AlignCenter)
         w = self.pos_editor.fontMetrics().boundingRect('0'*maxlen).width()
