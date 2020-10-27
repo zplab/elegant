@@ -405,7 +405,7 @@ def worm_self_intersection_map(lab_image_shape, center_tck, width_tck):
     """
     triangle_strip = spline_geometry.triangle_strip(center_tck, width_tck)
     vertex_vals = numpy.ones(len(triangle_strip))
-    intersection_map = draw.gouraud_triangle_strip(triangle_strip, vertex_vals, worm_image_shape, accumulate=True)
+    intersection_map = draw.gouraud_triangle_strip(triangle_strip, vertex_vals, lab_image_shape, accumulate=True)
     intersection_fraction = (intersection_map > 1).sum() / (intersection_map > 0).sum()
     return intersection_map, intersection_fraction
 
