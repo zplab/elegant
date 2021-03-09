@@ -127,7 +127,9 @@ def read_worms(*path_globs, name_prefix='', delimiter='\t', summary_globs=None,
 def _read_datafile(path, prefix, delimiter):
     """Iterate over a single- or multi-worm datafile, yielding (name, header, data)
     triplets corresponding to each worm in the file."""
-    header, data = datafile.read_delimited(path, delimiter=delimiter)
+    # just read data as strings and let the Worm constructor deal with coercion to float
+    # Otherwise worm names like '000' can get interpreted as floats.
+    header, data = datafile.read_delimited(path, delimiter=delimiter, coerce_float=False)
     header = [colname.replace(' ', '_') for colname in header]
     is_multi_worm = header[0] in ('name', 'worm')
     if not is_multi_worm:
@@ -287,7 +289,11 @@ class Worm(object):
             # add each entry in the timepoint data to the corresponding list in
             # vals_for_features
             for feature_vals, item in zip(vals_for_features, timepoint):
-                if item is None:
+                try:
+                    item = float(item)
+                except:
+                    pass
+                if item in (None, ''):
                     item = numpy.nan
                 feature_vals.append(item)
         for feature_name, feature_vals in zip(feature_names, vals_for_features):
