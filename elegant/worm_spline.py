@@ -82,28 +82,13 @@ def longest_path(skeleton):
 
     return numpy.asarray(longest_traceback)
 
-
+_NEIGHBORS = numpy.ones((3,3), dtype=bool)
+_NEIGHBORS[1,1] = 0
 def get_endpoints(skeleton):
-    # 1-values in structure1 are where we require a True in the input for a True output
-    # 1-values in structure2 are where we require a False in the input for a True output
-    # so: structure1 requires a point in the middle of a 3x3 neighborhoood be True
-    # and structure2 requires that it be an endpoint with exactly one axial neighbor
-    structure1 = numpy.array([[0,0,0], [0,1,0], [0,0,0]])
-    structure2 = numpy.array([[0,0,1], [1,0,1], [1,1,1]])
-    # return the union of all places that structure2 matches, when rotated to all
-    # four orientations and then reflected/rotated as well.
-    endpoints = _rotated_hit_or_miss(skeleton, structure1, structure2)
-    endpoints |= _rotated_hit_or_miss(skeleton, structure1, structure2.T)
-    return endpoints
+    """Find points in the provided bool mask that have exactly one fully-connected neighbor"""
+    neighbor_count = ndimage.correlate(skeleton.astype(numpy.uint8), _NEIGHBORS, mode='constant')
+    return ( neighbor_count == 1) & skeleton
 
-def _rotated_hit_or_miss(mask, structure1, structure2):
-    # perform a binary hit-or-miss with structure2 rotated in all four orientations,
-    # or-ing together the output.
-    output = ndimage.binary_hit_or_miss(mask, structure1, structure2)
-    for i in range(3):
-        structure2 = structure2[::-1].T # rotate 90 degrees
-        output |= ndimage.binary_hit_or_miss(mask, structure1, structure2)
-    return output
 
 def _get_splines(centerline, widths):
     # Strategy: extrapolate the first/last few pixels to get the full length of

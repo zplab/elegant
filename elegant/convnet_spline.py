@@ -55,10 +55,13 @@ def find_centerline(ap_coords, dv_coords, mask, dv_sigma=2, worm_width=60,
             path, cost = graph.route_through_array(costs, center_path[0], center_path[-1])
             centerline[tuple(numpy.transpose(path))] = 1
             center_path = find_centerline_from_loop(centerline, ap_coords)
+    costs, centerline = _untrim_images([costs, centerline], orig_shape, slices)
+    if len(center_path) == 0:
+        # something went wrong, probably in trying to find a path through a lariat
+        return costs, centerline, center_path, (None, None)
     center_path = orient_path_ascending(center_path, ap_coords)
     width_range = worm_width/1.5, worm_width*1.5
     pose = fit_splines(center_path, mask, dv_coords, width_range, width_step, center_smoothing, width_smoothing)
-    costs, centerline = _untrim_images([costs, centerline], orig_shape, slices)
     # add back the trim offset to the centerline tck and coordinates
     offset = slices[0].start, slices[1].start
     c = pose[0][1] # the c value of the center_tck
@@ -90,7 +93,7 @@ def _untrim_images(images, orig_shape, slices):
         yield new_image
 
 
-FULLY_CONNECTED = numpy.ones((3,3), dtype=bool)
+_FULLY_CONNECTED = numpy.ones((3,3), dtype=bool)
 
 def find_centerline_pixels(dv_coords, mask, sigma=1, worm_width=50, low_threshold=0.25, high_threshold=0.6):
     """ Find pixels along the centerline of the worm given a DV-coordinate image.
@@ -201,15 +204,17 @@ def find_centerline_pixels(dv_coords, mask, sigma=1, worm_width=50, low_threshol
     # regions not contiguous with a high-confidence region.
     high_mask = mask & all_ridges & (smooth_dv >= high_threshold)
     low_mask = all_ridges & (smooth_dv >= low_threshold)
-    extended_ridges = ndimage.binary_propagation(high_mask, mask=low_mask, structure=FULLY_CONNECTED)
+    extended_ridges = ndimage.binary_propagation(high_mask, mask=low_mask, structure=_FULLY_CONNECTED)
     # Now add regions of the maxima that are just a couple pixels away from the
     # extended regions too.
     # nearby_pixels below is regions of the low_mask that are both within the overall
     # mask and near to regions in extended_ridges. Then expand out such pixels to
-    # all connected pixels within low_mask
-    nearby_pixels = mask & low_mask & ndimage.binary_dilation(extended_ridges, iterations=3, structure=FULLY_CONNECTED)
-    neighboring_ridges = ndimage.binary_propagation(nearby_pixels, mask=low_mask, structure=FULLY_CONNECTED)
-    neighboring_ridges = morphology.thin(neighboring_ridges)
+    # all connected pixels within low_mask. Last, close any one- or two-pixel gaps
+    # and then skeletonize down back to a single pixel width
+    nearby_pixels = mask & low_mask & ndimage.binary_dilation(extended_ridges, iterations=3, structure=_FULLY_CONNECTED)
+    neighboring_ridges = ndimage.binary_propagation(nearby_pixels, mask=low_mask, structure=_FULLY_CONNECTED)
+    neighboring_ridges = ndimage.binary_dilation(neighboring_ridges, structure=_FULLY_CONNECTED)
+    neighboring_ridges = morphology.skeletonize(neighboring_ridges)
     return all_ridges, extended_ridges, neighboring_ridges
 
 def connect_centerline(centerlines, dv_costs):
@@ -237,7 +242,7 @@ def connect_centerline(centerlines, dv_costs):
     ep_indices = numpy.transpose(endpoints.nonzero())
     # check for any large loops/lariats, and if found, just return that for special handling
     # NB: no handling of trying to connect segments to loops; too complex
-    labels, num_segments = ndimage.label(centerlines, structure=FULLY_CONNECTED)
+    labels, num_segments = ndimage.label(centerlines, structure=_FULLY_CONNECTED)
     centerline_px = centerlines.sum()
     for i in range(1, num_segments+1):
         segment_mask = labels == i
@@ -310,7 +315,11 @@ def find_centerline_from_loop(loop, ap_coords):
     path, cost = graph.route_through_array(costs, low, high, geometric=False)
     midpoint = len(path)//2
     costs[tuple(numpy.transpose(path[midpoint-1:midpoint+2]))] = numpy.inf # break the loop
-    path, cost = graph.route_through_array(costs, path[midpoint-2], path[midpoint+2], geometric=False)
+    try:
+        path, cost = graph.route_through_array(costs, path[midpoint-2], path[midpoint+2], geometric=False)
+    except ValueError:
+        # no minimum-cost path found -- by breaking the loop we somehow broke the path too
+        path = []
     return numpy.array(path)
 
 
